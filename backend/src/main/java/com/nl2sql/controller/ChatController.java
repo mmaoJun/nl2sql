@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +36,8 @@ import reactor.core.publisher.Flux;
  * </ul>
  *
  * <p>校验（两个入口一致）：question 非空、datasourceId 非空，
- * 不合法抛 {@link BusinessException}（{@link ErrorCode#CHAT_INVALID_REQUEST}）。
+ * 不合法抛 {@link BusinessException}（{@link ErrorCode#CHAT_INVALID_REQUEST}）；
+ * 请求体缺失或 JSON 非法同样返回 4001（{@link #handleUnreadableBody}），不再落全局兜底的 500。
  * 认证由 T10 接入，会话由 T11 接入（sessionId 透传，当前忽略）。
  *
  * @see ChatService
@@ -100,5 +103,22 @@ public class ChatController {
         if (datasourceId == null) {
             throw new BusinessException(ErrorCode.CHAT_INVALID_REQUEST, "datasourceId 不能为空");
         }
+    }
+
+    /**
+     * 请求体缺失或 JSON 非法：返回业务码 4001（与手工参数校验同一语义），
+     * 不再落到全局兜底的 500/9999。
+     *
+     * <p>处理器挂在控制器内（而非 {@code @RestControllerAdvice}），让 4001 只作用于
+     * chat 入口，不影响其他接口的错误码语义。无 {@code @ResponseStatus}，
+     * 与 {@link BusinessException} 一致返回 HTTP 200 + body 错误码。
+     *
+     * @param ex 消息不可读异常
+     * @return 4001 错误响应
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ApiResponse<Void> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        log.warn("[chat] 请求体缺失或 JSON 非法: {}", ex.getMessage());
+        return ApiResponse.error(ErrorCode.CHAT_INVALID_REQUEST, "请求体不能为空或 JSON 格式非法");
     }
 }

@@ -3,9 +3,14 @@ package com.nl2sql.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.mapper.AuditLogMapper;
 import com.nl2sql.mapper.DataSourceMapper;
+import com.nl2sql.mapper.UserMapper;
+import com.nl2sql.model.AuditLog;
 import com.nl2sql.model.DataSource;
+import com.nl2sql.model.User;
 import com.nl2sql.model.dto.ApiResponse;
+import com.nl2sql.model.dto.LoginResponse;
 import com.nl2sql.model.vo.ChatResult;
 import com.nl2sql.model.vo.ChatStreamEvent;
 import org.junit.jupiter.api.Assumptions;
@@ -42,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -49,11 +55,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>两例各一次完整问答（真实 LLM 预算上限即此两问）：
  * <ol>
- *   <li>同步 {@code POST /api/v1/chat}：断言 answer 非空、rows 非空、latencyMs &gt; 0；</li>
+ *   <li>同步 {@code POST /api/v1/chat}：断言 answer 非空、rows 非空、latencyMs &gt; 0；
+ *       并验证 T10 审计——本轮问答在 {@code audit_logs} 落一条对应用户的记录；</li>
  *   <li>SSE {@code GET /api/v1/chat/stream}：收集事件流直到服务端关闭，
  *       断言出现 TOOL_CALL / TOOL_RESULT（且调用先于结果）并以 FINAL 收尾，
  *       FINAL 载荷（ChatResult）answer 非空、rows 非空。</li>
  * </ol>
+ *
+ * <p>T10 起两个入口均受 JWT 保护：测试内注册随机用户并登录，请求携带
+ * {@code Authorization: Bearer <token>}（token 只在进程内传递，不落盘、不进报告）。
  *
  * <p>环境守卫模式与 {@code AgentE2ESupport.assumeLocalStackUp} 一致（端口探测；
  * 该支持类为测试包私有，本类按 T7 的做法就地实现）。数据源按库名
@@ -63,6 +73,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ChatControllerIntegrationTest {
 
     private static final String TARGET_DATABASE = "nlp2sql_test";
+
+    /** 测试内注册用户所用密码（仅测试进程内使用） */
+    private static final String PASSWORD = "t10-chat-pass-123456";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @LocalServerPort
@@ -74,18 +88,28 @@ class ChatControllerIntegrationTest {
     @Autowired
     private DataSourceMapper dataSourceMapper;
 
-    /** 同步接口：一次完整问答，校验 answer / rows / latencyMs。 */
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private AuditLogMapper auditLogMapper;
+
+    /** 同步接口：一次完整问答，校验 answer / rows / latencyMs，并断言审计落库。 */
     @Test
     @Timeout(value = 300, unit = TimeUnit.SECONDS)
     void syncChatReturnsAnswerWithRows() {
         assumeLocalStackUp();
         Long datasourceId = nlp2sqlTestDatasourceId();
+        Session session = registerAndLogin();
+        Long userId = userIdOf(session.username());
 
+        String question = "users 表中共有多少位用户？";
         Map<String, Object> body = Map.of(
-                "question", "users 表中共有多少位用户？",
+                "question", question,
                 "datasourceId", datasourceId);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(session.token());
 
         ResponseEntity<ApiResponse<ChatResult>> response = restTemplate.exchange(
                 "/api/v1/chat", HttpMethod.POST, new HttpEntity<>(body, headers),
@@ -114,6 +138,41 @@ class ChatControllerIntegrationTest {
         System.out.println("[T9-chat] rows=" + result.getRows().size() + "行 rowCount=" + result.getRowCount()
                 + " columns=" + result.getColumns());
         System.out.println("[T9-chat] trace=" + result.getTrace());
+
+        // T10 审计：本轮问答应在 audit_logs 落一条属于该用户的记录（与聊天用例合并，不额外消耗模型预算）
+        AuditLog audit = auditLogMapper.selectOne(new LambdaQueryWrapper<AuditLog>()
+                .eq(AuditLog::getUserId, userId)
+                .orderByDesc(AuditLog::getId)
+                .last("LIMIT 1"));
+        assertNotNull(audit, "聊天后应为用户 " + userId + " 落一条审计记录");
+        assertEquals(question, audit.getNlInput(), "审计 nlInput 应为用户原话");
+        assertEquals(datasourceId, audit.getDatasourceId(), "审计 datasourceId 应为请求的数据源");
+        assertNotNull(audit.getGeneratedSql(), "审计 generatedSql 不应为空");
+        assertEquals(Boolean.TRUE, audit.getValidationPassed(), "审计 validationPassed 应为 true");
+        assertEquals(Boolean.TRUE, audit.getExecutionSuccess(), "审计 executionSuccess 应为 true");
+        assertNotNull(audit.getRowCount(), "审计 rowCount 不应为 null");
+        assertTrue(audit.getRowCount() > 0, "审计 rowCount 应大于 0，实际 " + audit.getRowCount());
+        assertNotNull(audit.getExecutionTimeMs(), "审计 executionTimeMs 不应为 null");
+        assertTrue(audit.getExecutionTimeMs() > 0, "审计 executionTimeMs 应大于 0");
+        assertNull(audit.getErrorMessage(), "成功路径审计 errorMessage 应为空");
+        assertNotNull(audit.getModelName(), "审计 modelName 不应为空");
+        assertEquals("ollama", audit.getModelProvider(), "本地通道审计 modelProvider 应为 ollama");
+        assertNull(audit.getSessionId(), "sessionId 归因属 T11，本轮应为空");
+        assertNull(audit.getTurnId(), "turnId 归因属 T11，本轮应为空");
+        assertNotNull(audit.getCreatedAt(), "审计 createdAt 应由自动填充写入");
+
+        System.out.println("[T10-audit] id=" + audit.getId()
+                + " userId=" + audit.getUserId()
+                + " datasourceId=" + audit.getDatasourceId()
+                + " validationPassed=" + audit.getValidationPassed()
+                + " executionSuccess=" + audit.getExecutionSuccess()
+                + " rowCount=" + audit.getRowCount()
+                + " executionTimeMs=" + audit.getExecutionTimeMs()
+                + " model=" + audit.getModelName() + "/" + audit.getModelProvider()
+                + " sessionId=" + audit.getSessionId() + " turnId=" + audit.getTurnId()
+                + " createdAt=" + audit.getCreatedAt());
+        System.out.println("[T10-audit] nlInput=" + audit.getNlInput()
+                + " | generatedSql=" + audit.getGeneratedSql());
     }
 
     /** SSE 接口：收集事件流，校验工具事件序列与 FINAL 收尾。 */
@@ -122,6 +181,7 @@ class ChatControllerIntegrationTest {
     void sseChatStreamsToolEventsThenFinal() throws Exception {
         assumeLocalStackUp();
         Long datasourceId = nlp2sqlTestDatasourceId();
+        Session session = registerAndLogin();
 
         String question = "orders 表中共有多少条订单记录？";
         URI uri = URI.create("http://127.0.0.1:" + port + "/api/v1/chat/stream?question="
@@ -131,6 +191,7 @@ class ChatControllerIntegrationTest {
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .header("Authorization", "Bearer " + session.token())
                 .timeout(Duration.ofMinutes(2))
                 .GET()
                 .build();
@@ -181,6 +242,54 @@ class ChatControllerIntegrationTest {
 
     /** SSE 解析产物：事件名 + data（多行 data 以 \n 连接）。 */
     private record SseEvent(String name, String data) {
+    }
+
+    /** 测试内注册的登录会话：用户名 + token（token 只在进程内传递，不落盘、不进报告）。 */
+    private record Session(String username, String token) {
+    }
+
+    /** 注册随机用户并登录（受保护接口需要 JWT）；随机名避免与既有数据冲突。 */
+    private Session registerAndLogin() {
+        String username = "t10c" + System.currentTimeMillis() + (int) (Math.random() * 1000);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<ApiResponse<String>> registered = restTemplate.exchange(
+                "/api/v1/auth/register", HttpMethod.POST,
+                new HttpEntity<>(Map.of("username", username, "password", PASSWORD), headers),
+                new ParameterizedTypeReference<>() {
+                });
+        assertEquals(200, registered.getBody() == null ? -1 : registered.getBody().getCode(),
+                "测试用户注册应成功: " + (registered.getBody() == null ? "无 body" : registered.getBody().getMessage()));
+
+        ResponseEntity<ApiResponse<LoginResponse>> login = restTemplate.exchange(
+                "/api/v1/auth/login", HttpMethod.POST,
+                new HttpEntity<>(Map.of("username", username, "password", PASSWORD), headers),
+                new ParameterizedTypeReference<>() {
+                });
+        assertEquals(200, login.getBody() == null ? -1 : login.getBody().getCode(),
+                "测试用户登录应成功: " + (login.getBody() == null ? "无 body" : login.getBody().getMessage()));
+        LoginResponse data = login.getBody() == null ? null : login.getBody().getData();
+        assertNotNull(data, "登录 data 不应为空");
+        assertNotNull(data.getToken(), "token 不应为空");
+        System.out.println("[T10-auth] 聊天用例用户: username=" + username
+                + " token(前12字符)=" + truncateToken(data.getToken()));
+        return new Session(username, data.getToken());
+    }
+
+    /** 用户名 → userId（审计 assert 用）。 */
+    private Long userIdOf(String username) {
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        assertNotNull(user, "注册用户应能在 users 表查到: " + username);
+        return user.getId();
+    }
+
+    /** 留证用 token 截断（前 12 字符）。 */
+    private static String truncateToken(String token) {
+        if (token == null) {
+            return "(null)";
+        }
+        return token.length() <= 12 ? token + "..." : token.substring(0, 12) + "...";
     }
 
     /** 读 SSE 事件流直到 EOF（服务端在 FINAL 后关闭），按空行分隔事件。 */

@@ -1,6 +1,7 @@
 package com.nl2sql.config;
 
 import com.nl2sql.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -45,6 +46,11 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // SSE（/api/v1/chat/stream）在响应体写完后会有一次 ASYNC 派发；无状态会话下
+                // SecurityContext 不跨派发保留，若 ASYNC 派发再要求认证，ExceptionTranslationFilter
+                // 会在"响应已提交"时抛 Access Denied 并掐断连接（客户端读到 chunked EOF）。
+                // 初始 REQUEST 派发已完成认证，ASYNC 派发放行不新增任何匿名入口。
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 // 部署探活放行（旧实现无此接口，属本任务新增放行项；health 不依赖任何外部资源）
                 .requestMatchers("/api/v1/health").permitAll()
