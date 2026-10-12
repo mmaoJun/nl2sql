@@ -69,6 +69,19 @@ nl2sql:
   schema-cache:
     ttl-seconds: 3600
 
+  # 模型通道配置（双轨：本地 Ollama 默认，云端 DashScope 可选）
+  model:
+    # 云端 DashScope API Key：从环境变量注入，缺省为空串（缺 key 不阻塞启动）
+    dashscope-api-key: ${DASHSCOPE_API_KEY:}
+    cloud-model: qwen-plus
+    # Ollama 服务地址（不含 /v1，装配时自动补全 /v1/chat/completions）
+    ollama-base-url: http://localhost:11434
+    local-model: qwen2.5-coder:7b
+    # 本地模型采样温度：0.8（Ollama 默认）下工具调用格式不稳定，实测取 0.1
+    local-temperature: 0.1
+    # ReActAgent 默认装配的通道: local | cloud
+    provider: local
+
 # SpringDoc OpenAPI
 springdoc:
   api-docs:
