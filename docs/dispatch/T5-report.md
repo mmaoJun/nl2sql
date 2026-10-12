@@ -11,7 +11,7 @@
 | `config/AgentConfig.java` | Toolkit Bean（注册 5 只读工具）+ ReActAgent Bean（`NL2SQLAgent`，`maxIters=5`）+ 双轨模型 Bean + 共用装配入口 `buildAgent` |
 | `config/ModelProperties.java` | `nl2sql.model.*` 绑定（apiKey / cloud-model / ollama-base-url / local-model / local-temperature / provider） |
 | `config/TextualToolCallFormatter.java` | 本地通道协议适配器（§3） |
-| `resources/prompts/agent-v1.md` | sysPrompt v1（41 行） |
+| `resources/prompts/agent-local-v1.md` · `agent-cloud-v1.md` | 通道化 sysPrompt：本地=文本化工具协议版 / 云端=原生 function calling 版（见 §8） |
 | `test/.../agent/AgentEndToEndTest.java` · `AgentE2ESupport.java` · `AgentCloudSmokeTest.java` | 端到端轨迹用例 + 云端冒烟（缺 key 自动跳过） |
 | `application.yml`（增补） | `nl2sql.model` 段：缺 key 不阻塞启动 |
 
@@ -58,7 +58,14 @@ execute_sql: SELECT name, age FROM users ORDER BY age DESC LIMIT 5
 
 ## 7. 遗留（供 W3+）
 
-1. **云端冒烟待 key**：用例已就位，由用户手动执行（命令见交付说明），结果待归档。
+1. **云端冒烟**：首跑发现"提示词跨通道不适配"问题并已修复（§8）；复跑验证由用户执行，结果待归档。
 2. 技术方案书待同步：AgentScope 2.0.1→**2.0.2**、`maxIterations`→**`maxIters`**、本地通道 `stream=false` 与文本化适配器设计（§5.3/§5.4 代码示例）。
 3. 真实 7B 行为数据可用于《7B 模型能力评估报告》："协议适配前后"成功率对比（2/9 → 8/8）、单问延迟（本机 5-15s 级）、空回复现象的机制与规避方法。
 4. Redis 未运行：会话记忆（W3）启动前需就绪。
+
+## 8. 补充（2026-10-12 云端冒烟首跑：发现并修复）
+
+- **首跑结果**：`Tests run: 1, Failures: 1`——调用序列为空、耗时 3.1s；轨迹显示"最终回答"是文本化的 `{"name": "list_tables", "arguments": {"datasource_id": 5}}`。
+- **根因**：此前只有一条 sysPrompt，且是按本地通道（"需要调用工具时只输出一个 JSON 对象"的文本化协议）写的；云端 qwen-plus 走原生 function calling，在该提示词下把 JSON 调用当普通文本回答输出，ReAct 循环把该文本当最终答案结束，工具从未被调用。
+- **修复**（提交 `fix(agent): 按通道拆分系统提示词…`）：提示词按通道拆分——`agent-local-v1.md`（文本化协议，本地，内容不变）与 `agent-cloud-v1.md`（原生工具调用版，去掉 JSON 文本协议段）；`buildAgent` 按模型类型自动选择（`DashScopeChatModel` → 云端版）。本地端到端回归 **2/2 通过**。
+- **复验**：待用户重跑 `AgentCloudSmokeTest` 后归档结果。

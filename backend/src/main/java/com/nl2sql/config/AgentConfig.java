@@ -40,8 +40,10 @@ import java.nio.charset.StandardCharsets;
  * 云端冒烟测试（复用同一 sysPrompt / Toolkit / maxIters，仅换模型）都走它，
  * 保证两条通道的装配完全一致。
  *
- * <p>sysPrompt 来自 {@code classpath:prompts/agent-v1.md}（v1 版本，要点：
- * 只读硬约束、探索式工具流程、拒绝写操作、SELECT 必带 LIMIT、中文回答）。
+ * <p>sysPrompt 按通道选择（{@link #SYS_PROMPT_LOCAL} / {@link #SYS_PROMPT_CLOUD}）：
+ * 本地模型需要"文本化工具调用"协议提示，云端模型走原生 function calling——同一条
+ * 提示词跨通道复用会让云端模型把 JSON 调用当文本回答输出（T5 云端冒烟实测）。
+ * 两条提示词共同要点：只读硬约束、探索式工具流程、拒绝写操作、SELECT 必带 LIMIT、中文回答。
  *
  * @see ModelProperties
  */
@@ -59,8 +61,11 @@ public class AgentConfig {
     /** Ollama 不校验 API Key，填非空占位串即可通过 OpenAI 兼容客户端的参数检查。 */
     static final String OLLAMA_PLACEHOLDER_API_KEY = "ollama";
 
-    /** sysPrompt 资源路径。 */
-    static final String SYS_PROMPT_LOCATION = "classpath:prompts/agent-v1.md";
+    /** 本地通道 sysPrompt：文本化工具调用协议（Ollama / qwen2.5-coder）。 */
+    static final String SYS_PROMPT_LOCAL = "prompts/agent-local-v1.md";
+
+    /** 云端通道 sysPrompt：原生 function calling（DashScope / qwen 系列）。 */
+    static final String SYS_PROMPT_CLOUD = "prompts/agent-cloud-v1.md";
 
     /**
      * 注册 5 个只读工具的 Toolkit。
@@ -158,14 +163,18 @@ public class AgentConfig {
     /**
      * Agent 组装入口：默认 Bean 与云端冒烟测试共用，保证除模型外装配一致。
      *
+     * <p>sysPrompt 按模型通道自动选择：{@link DashScopeChatModel} → 原生工具调用提示；
+     * 其余（Ollama OpenAI 兼容通道）→ 文本化工具调用提示。</p>
+     *
      * @param model   本次装配使用的模型
      * @param toolkit 只读工具集
      * @return name / sysPrompt / toolkit / maxIters 均与默认装配一致的 ReActAgent
      */
     public ReActAgent buildAgent(Model model, Toolkit toolkit) {
+        String sysPromptLocation = model instanceof DashScopeChatModel ? SYS_PROMPT_CLOUD : SYS_PROMPT_LOCAL;
         return ReActAgent.builder()
                 .name(AGENT_NAME)
-                .sysPrompt(loadSysPrompt())
+                .sysPrompt(loadSysPrompt(sysPromptLocation))
                 .model(model)
                 .toolkit(toolkit)
                 .maxIters(MAX_ITERS)
@@ -193,13 +202,13 @@ public class AgentConfig {
         return cloudModel;
     }
 
-    /** 读取 sysPrompt（v1）。文件缺失或读取失败属于装配期错误，直接快速失败。 */
-    private String loadSysPrompt() {
-        Resource resource = new ClassPathResource("prompts/agent-v1.md");
+    /** 读取 sysPrompt。文件缺失或读取失败属于装配期错误，直接快速失败。 */
+    private String loadSysPrompt(String location) {
+        Resource resource = new ClassPathResource(location);
         try {
             return resource.getContentAsString(StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new UncheckedIOException("加载 sysPrompt 失败: " + SYS_PROMPT_LOCATION, e);
+            throw new UncheckedIOException("加载 sysPrompt 失败: " + location, e);
         }
     }
 }
