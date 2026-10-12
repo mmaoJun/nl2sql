@@ -43,9 +43,10 @@ import java.util.UUID;
  * <p>问题按工具与提示词约定包装为 {@code "数据源ID为 N。" + question}；
  * 每轮问答使用独立的 Agent 运行时会话（隔离 Agent 状态，见 {@link #buildContext()}）。
  *
- * <p><b>会话记忆</b>（T11）：sessionId 非空时校验归属并注入历史，
+ * <p><b>会话记忆</b>（T11；T23 起扩为跨数据源）：sessionId 非空时校验归属并注入历史，
  * 为空则自动新建会话（{@code ChatResult.sessionId} 回填给前端）。历史 = 同会话
- * <b>同数据源</b>最近 {@code nl2sql.memory.context-turns} 轮的「用户问 + 助手答」消息对
+ * 最近 {@code nl2sql.memory.context-turns} 轮的「用户问 + 助手答」消息对
+ * （T23 起<b>不按数据源过滤</b>，供跨源融合追问；每轮问题携带其自身的数据源 ID）
  * + 当前包装问题，交给 {@code agent.streamEvents(List<Msg>, ctx)}。
  * 每轮问答（成功 / 失败 / 空回答）都往 {@code chat_turns} 落一行并推进会话活跃时间。
  *
@@ -109,7 +110,7 @@ public class ChatService {
         Long userId = resolveCurrentUserId();
         Long sessionId = openSession(sessionIdOrNull, userId, datasourceId);
         String wrapped = wrapQuestion(datasourceId, question);
-        List<Msg> messages = buildMessages(datasourceId, sessionId, wrapped);
+        List<Msg> messages = buildMessages(sessionId, wrapped);
         // 身份与模型在请求线程上解析（SSE 的异步订阅线程上 SecurityContext 不可用）
         String model = resolveModelName();
         String provider = resolveModelProvider();
@@ -178,7 +179,7 @@ public class ChatService {
         Long userId = resolveCurrentUserId();
         Long sessionId = openSession(sessionIdOrNull, userId, datasourceId);
         String wrapped = wrapQuestion(datasourceId, question);
-        List<Msg> messages = buildMessages(datasourceId, sessionId, wrapped);
+        List<Msg> messages = buildMessages(sessionId, wrapped);
         // 身份与模型在请求线程上解析（SSE 的异步订阅线程上 SecurityContext 不可用）
         String model = resolveModelName();
         String provider = resolveModelProvider();
@@ -256,20 +257,22 @@ public class ChatService {
     /**
      * 组装交给 Agent 的消息序列：历史「用户问 + 助手答」消息对 + 当前包装问题。
      *
-     * <p>历史按<b>数据源隔离</b>（见 {@link ChatSessionService#recentTurns}）：换库后第一轮
-     * 取到空上下文，等于该库下的首轮。历史中的用户消息同样带“数据源ID为 N。”
-     * 包装，与当前问题保持同一种格式，避免模型把历史消息当成另一种协议。
+     * <p>历史取<b>同会话最近 N 轮（跨数据源）</b>（见 {@link #loadHistory}）：T23 起支持
+     * 「对话式跨源融合」——同一会话先后对 MySQL 与 REST API 等不同数据源提问，第二轮
+     * 借助第一轮的真实数值做汇总对比。历史轮次以<b>原始问题原文</b>注入、<b>不带</b>
+     * 「数据源ID为 N。」包装：该约定只保留在最新一条用户消息中——实测本地 7B 会把
+     * 历史与当前两组不同的「数据源ID为 N」句式误读成"更换数据源"的写指令而拒答
+     * （T23 探针实验，见报告）；单一 ID 声明下模型稳定按当前数据源查询。
      *
-     * @param datasourceId    本轮数据源
      * @param sessionId       本轮会话，null 表示无会话模式（无历史）
      * @param wrappedQuestion 当前包装问题
      * @return 消息序列（末尾必为当前用户问题）
      */
-    private List<Msg> buildMessages(Long datasourceId, Long sessionId, String wrappedQuestion) {
+    private List<Msg> buildMessages(Long sessionId, String wrappedQuestion) {
         List<Msg> messages = new ArrayList<>();
         if (sessionId != null) {
-            for (ChatTurn turn : loadHistory(sessionId, datasourceId)) {
-                messages.add(textMessage(MsgRole.USER, wrapQuestion(datasourceId, turn.getQuestion())));
+            for (ChatTurn turn : loadHistory(sessionId)) {
+                messages.add(textMessage(MsgRole.USER, turn.getQuestion()));
                 messages.add(textMessage(MsgRole.ASSISTANT, turn.getAnswer()));
             }
         }
@@ -278,23 +281,21 @@ public class ChatService {
     }
 
     /**
-     * 加载可注入的历史轮次：同会话同数据源最近 N 轮，过滤掉没有助手回答的轮次。
+     * 加载可注入的历史轮次：同会话最近 N 轮（跨数据源），过滤掉没有助手回答的轮次。
      *
-     * <p>跳过条件：{@code question} 或 {@code answer} 为空。失败与空回答的轮次没有助手文本，
-     * 而空 assistant 消息既可能被模型服务判为非法，也会让"问-答成对"的语义落空。
-     * 历史读取失败只降级（当无历史），不影响本轮问答。
+     * <p>跨源是 T23「对话式融合」的前提（先查 A 源、再问 B 源时要能看到 A 源的真实数值）；
+     * 历史中的每轮问题在注入时携带各自的数据源 ID，避免模型用错源。跳过条件：
+     * {@code question} 或 {@code answer} 为空。历史读取失败只降级（当无历史），不影响本轮问答。
      *
-     * @param sessionId    会话 ID
-     * @param datasourceId 数据源 ID
+     * @param sessionId 会话 ID
      * @return 历史轮次（时间正序），可能为空
      */
-    private List<ChatTurn> loadHistory(Long sessionId, Long datasourceId) {
+    private List<ChatTurn> loadHistory(Long sessionId) {
         List<ChatTurn> history;
         try {
-            history = sessionService.recentTurns(sessionId, datasourceId, memoryProperties.getContextTurns());
+            history = sessionService.recentSessionTurns(sessionId, memoryProperties.getContextTurns());
         } catch (Exception e) {
-            log.warn("[chat] 历史轮次加载失败，本轮按无历史处理: sessionId={} datasourceId={}",
-                    sessionId, datasourceId, e);
+            log.warn("[chat] 历史轮次加载失败，本轮按无历史处理: sessionId={}", sessionId, e);
             return List.of();
         }
         List<ChatTurn> usable = history.stream()

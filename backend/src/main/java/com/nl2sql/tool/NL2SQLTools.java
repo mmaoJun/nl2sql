@@ -207,7 +207,9 @@ public class NL2SQLTools {
     @Tool(name = "execute_sql",
             description = "执行一条只读 SELECT 查询并返回结果集（列名 + 数据行）。工具内部会强制安全校验并自动追加 LIMIT"
                     + "（防止全表扫描），SQL 不合法时直接拒绝并给出原因，无需先调 validate_sql。"
-                    + "例如 {\"datasource_id\": 1, \"sql\": \"SELECT name, salary FROM users ORDER BY salary DESC LIMIT 10\"}。只读操作，任何写操作都会被拒绝。",
+                    + "例如 {\"datasource_id\": 1, \"sql\": \"SELECT name, salary FROM users ORDER BY salary DESC LIMIT 10\"}。"
+                    + "只读操作，任何写操作都会被拒绝。SQL 只能使用当前数据源（datasource_id 对应）的表；"
+                    + "不支持跨数据源 JOIN——需要结合其他数据源或历史轮次的数据时，在本数据源内查询后用文字对比引用。",
             readOnly = true, concurrencySafe = false)
     public QueryResult executeSql(
             @ToolParam(name = "datasource_id", required = true, description = "数据源 ID（整数），例如 1") Long datasourceId,

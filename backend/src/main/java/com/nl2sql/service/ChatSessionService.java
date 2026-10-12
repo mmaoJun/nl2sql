@@ -121,6 +121,31 @@ public class ChatSessionService {
     }
 
     /**
+     * 取同会话最近若干轮（<b>跨数据源</b>），供「对话式跨源融合」追问注入历史（T23）。
+     *
+     * <p>与 {@link #recentTurns} 的区别是<b>不按数据源过滤</b>：同一会话先后对不同
+     * 数据源提问时（如先查 MySQL 的员工数、再查 REST API 的预算），第二轮需要看到
+     * 第一轮的真实数值才能做汇总对比（应用层融合）。历史以原文注入、不带数据源标注
+     * （见 {@code ChatService#buildMessages}）：实测本地 7B 会把两组不同的「数据源ID为 N」
+     * 句式误读为更换数据源的写指令而拒答（T23 探针，见报告）。同数据源会话行为与
+     * {@link #recentTurns} 完全一致。
+     *
+     * <p>先在库里倒序 LIMIT 再翻回正序；{@code limit} 来自配置项而非用户输入。
+     *
+     * @param sessionId 会话 ID
+     * @param limit     最多取几轮
+     * @return 历史轮次实体，时间正序
+     */
+    public List<ChatTurn> recentSessionTurns(Long sessionId, int limit) {
+        List<ChatTurn> turns = turnMapper.selectList(new LambdaQueryWrapper<ChatTurn>()
+                .eq(ChatTurn::getSessionId, sessionId)
+                .orderByDesc(ChatTurn::getId)
+                .last("LIMIT " + limit));
+        Collections.reverse(turns);
+        return turns;
+    }
+
+    /**
      * 重命名会话。
      *
      * @param sessionId 会话 ID
