@@ -58,7 +58,7 @@ execute_sql: SELECT name, age FROM users ORDER BY age DESC LIMIT 5
 
 ## 7. 遗留（供 W3+）
 
-1. **云端冒烟**：首跑发现"提示词跨通道不适配"问题并已修复（§8）；复跑验证由用户执行，结果待归档。
+1. **云端冒烟**：已完成——首跑发现"提示词跨通道不适配"问题，修复后复验通过（§8）。
 2. 技术方案书待同步：AgentScope 2.0.1→**2.0.2**、`maxIterations`→**`maxIters`**、本地通道 `stream=false` 与文本化适配器设计（§5.3/§5.4 代码示例）。
 3. 真实 7B 行为数据可用于《7B 模型能力评估报告》："协议适配前后"成功率对比（2/9 → 8/8）、单问延迟（本机 5-15s 级）、空回复现象的机制与规避方法。
 4. Redis 未运行：会话记忆（W3）启动前需就绪。
@@ -68,4 +68,4 @@ execute_sql: SELECT name, age FROM users ORDER BY age DESC LIMIT 5
 - **首跑结果**：`Tests run: 1, Failures: 1`——调用序列为空、耗时 3.1s；轨迹显示"最终回答"是文本化的 `{"name": "list_tables", "arguments": {"datasource_id": 5}}`。
 - **根因**：此前只有一条 sysPrompt，且是按本地通道（"需要调用工具时只输出一个 JSON 对象"的文本化协议）写的；云端 qwen-plus 走原生 function calling，在该提示词下把 JSON 调用当普通文本回答输出，ReAct 循环把该文本当最终答案结束，工具从未被调用。
 - **修复**（提交 `fix(agent): 按通道拆分系统提示词…`）：提示词按通道拆分——`agent-local-v1.md`（文本化协议，本地，内容不变）与 `agent-cloud-v1.md`（原生工具调用版，去掉 JSON 文本协议段）；`buildAgent` 按模型类型自动选择（`DashScopeChatModel` → 云端版）。本地端到端回归 **2/2 通过**。
-- **复验**：待用户重跑 `AgentCloudSmokeTest` 后归档结果。
+- **复验（通过）**：`Tests run: 1, Failures: 0, Skipped: 0`；轨迹 `list_tables → get_schema(users) → execute_sql(SELECT COUNT(*) AS user_count FROM users)`，返回 200，回答"users 表中共有 200 位用户"，耗时 4782ms。**W2 检查点（云端模型 + ReActAgent 集成验证）闭环**。
