@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.mapper.AuditLogMapper;
+import com.nl2sql.mapper.ChatTurnMapper;
 import com.nl2sql.mapper.DataSourceMapper;
 import com.nl2sql.mapper.UserMapper;
 import com.nl2sql.model.AuditLog;
+import com.nl2sql.model.ChatTurn;
 import com.nl2sql.model.DataSource;
 import com.nl2sql.model.User;
 import com.nl2sql.model.dto.ApiResponse;
@@ -56,10 +58,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>两例各一次完整问答（真实 LLM 预算上限即此两问）：
  * <ol>
  *   <li>同步 {@code POST /api/v1/chat}：断言 answer 非空、rows 非空、latencyMs &gt; 0；
- *       并验证 T10 审计——本轮问答在 {@code audit_logs} 落一条对应用户的记录；</li>
+ *       并验证 T10 审计——本轮问答在 {@code audit_logs} 落一条对应用户的记录；
+ *       T11 起顺带断言会话归因（审计 session_id/turn_id 非空）与轮次落库（answer 与结果一致）；</li>
  *   <li>SSE {@code GET /api/v1/chat/stream}：收集事件流直到服务端关闭，
  *       断言出现 TOOL_CALL / TOOL_RESULT（且调用先于结果）并以 FINAL 收尾，
- *       FINAL 载荷（ChatResult）answer 非空、rows 非空。</li>
+ *       FINAL 载荷（ChatResult）answer 非空、rows 非空、sessionId 非空。</li>
  * </ol>
  *
  * <p>T10 起两个入口均受 JWT 保护：测试内注册随机用户并登录，请求携带
@@ -93,6 +96,9 @@ class ChatControllerIntegrationTest {
 
     @Autowired
     private AuditLogMapper auditLogMapper;
+
+    @Autowired
+    private ChatTurnMapper chatTurnMapper;
 
     /** 同步接口：一次完整问答，校验 answer / rows / latencyMs，并断言审计落库。 */
     @Test
@@ -157,9 +163,18 @@ class ChatControllerIntegrationTest {
         assertNull(audit.getErrorMessage(), "成功路径审计 errorMessage 应为空");
         assertNotNull(audit.getModelName(), "审计 modelName 不应为空");
         assertEquals("ollama", audit.getModelProvider(), "本地通道审计 modelProvider 应为 ollama");
-        assertNull(audit.getSessionId(), "sessionId 归因属 T11，本轮应为空");
-        assertNull(audit.getTurnId(), "turnId 归因属 T11，本轮应为空");
+        // T11：未带 sessionId 的问答由服务端自动建会话并落轮次，审计随之带上归因
+        assertNotNull(audit.getSessionId(), "T11 起审计应带会话归因（自动新建会话）");
+        assertNotNull(audit.getTurnId(), "T11 起审计应带轮次归因");
         assertNotNull(audit.getCreatedAt(), "审计 createdAt 应由自动填充写入");
+
+        // T11 轮次落库：审计指向的轮次应存在，且 answer 与本次结果一致
+        ChatTurn turn = chatTurnMapper.selectById(audit.getTurnId());
+        assertNotNull(turn, "审计 turn_id 指向的轮次应落库: " + audit.getTurnId());
+        assertEquals(audit.getSessionId(), turn.getSessionId(), "轮次应挂在审计的会话下");
+        assertEquals(question, turn.getQuestion(), "轮次 question 应为用户原话");
+        assertEquals(result.getAnswer(), turn.getAnswer(), "轮次 answer 应与本次回答一致");
+        assertEquals(datasourceId, turn.getDatasourceId(), "轮次应记本轮数据源");
 
         System.out.println("[T10-audit] id=" + audit.getId()
                 + " userId=" + audit.getUserId()
@@ -226,6 +241,8 @@ class ChatControllerIntegrationTest {
         assertTrue(finalData.path("rows").isArray() && !finalData.path("rows").isEmpty(),
                 "FINAL.rows 不应为空");
         assertTrue(finalData.path("latencyMs").asLong() > 0, "FINAL.latencyMs 应大于 0");
+        assertTrue(finalData.path("sessionId").asLong() > 0,
+                "FINAL.sessionId 应为自动新建的会话 id（T11 契约增量，T12 依赖）");
 
         // 留证：前 10 个事件与关键载荷
         System.out.println("[T9-chat] SSE 事件序列(前 10 个): " + names.subList(0, Math.min(10, names.size())));
