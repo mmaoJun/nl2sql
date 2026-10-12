@@ -132,7 +132,8 @@ class MetadataServiceIntegrationTest {
 
         System.out.println("[T7] compress(question=" + SAMPLE_QUESTION + ") light-len=" + compressedLight.length()
                 + " full-len=" + compressedFull.length());
-        System.out.println("[T7] compress sample(first 500 chars):\n" + truncate(compressedFull, 500));
+        System.out.println("[T7] compress(getTables) sample(first 500 chars):\n" + truncate(compressedLight, 500));
+        System.out.println("[T7] compress(getSchema) sample(first 500 chars):\n" + truncate(compressedFull, 500));
     }
 
     @Test
