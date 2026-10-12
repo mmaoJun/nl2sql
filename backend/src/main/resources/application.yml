@@ -75,6 +75,11 @@ nl2sql:
   schema-cache:
     ttl-seconds: 3600
 
+  # 会话记忆配置（T11）：多轮追问时从 chat_turns 注入历史
+  memory:
+    # 上下文窗口轮数：最多注入同会话同数据源的最近几轮（数值同旧项目 nlp2sql.memory.context-turns）
+    context-turns: 3
+
   # 模型通道配置（双轨：本地 Ollama 默认，云端 DashScope 可选）
   model:
     # 云端 DashScope API Key：从环境变量注入，缺省为空串（缺 key 不阻塞启动）

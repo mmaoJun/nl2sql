@@ -71,16 +71,17 @@ CREATE TABLE IF NOT EXISTS chat_turns (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     session_id BIGINT NOT NULL,
     question TEXT NOT NULL COMMENT '用户原话',
-    resolved_question TEXT COMMENT '改写后的独立问题，NULL 表示本轮未改写',
-    rewrite_status VARCHAR(20) NOT NULL DEFAULT 'skipped' COMMENT 'skipped / applied / failed',
+    resolved_question TEXT COMMENT '改写后的独立问题，NULL 表示本轮未改写（nl2sql 无改写层，恒为 NULL）',
+    rewrite_status VARCHAR(20) NOT NULL DEFAULT 'skipped' COMMENT 'skipped / applied / failed（nl2sql 恒为 skipped）',
     datasource_id BIGINT NOT NULL COMMENT '本轮实际查询的库',
     model_name VARCHAR(100) COMMENT '本轮实际调用的模型 id',
     model_provider VARCHAR(30) COMMENT '本轮实际调用的 provider',
     generated_sql TEXT,
     row_count INT,
     execution_time_ms BIGINT,
-    status VARCHAR(20) NOT NULL COMMENT 'ok / failed',
+    status VARCHAR(20) NOT NULL COMMENT 'ok / failed / empty',
     error_message VARCHAR(500),
+    answer TEXT COMMENT '本轮助手回答文本，历史注入用；失败/空回答时为 NULL',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_session_datasource (session_id, datasource_id, id),
     INDEX idx_session_created (session_id, created_at)
@@ -90,3 +91,7 @@ CREATE TABLE IF NOT EXISTS chat_turns (
 -- ALTER TABLE audit_logs
 --   ADD COLUMN session_id BIGINT COMMENT '所属会话，无会话模式为空',
 --   ADD COLUMN turn_id BIGINT COMMENT '所属轮次，无会话模式为空';
+
+-- 2026-10-12: chat_turns 增加助手回答列（T11 历史注入需要；已有库执行一次）
+-- ALTER TABLE chat_turns
+--   ADD COLUMN answer TEXT COMMENT '本轮助手回答文本，历史注入用；失败/空回答时为 NULL';
