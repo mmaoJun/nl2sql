@@ -208,9 +208,11 @@ async function handleSend(message) {
   scrollToBottom()
 }
 
-/** 停止生成：abort 进行中的 SSE 流；UI 收尾（loading 复位、光标消失、消息标记）由 store 完成 */
-function handleStop() {
+/** 停止生成：abort 进行中的 SSE 流；UI 收尾（loading 复位、光标消失、消息标记）由 store 完成。
+    停止后顺带刷新会话列表：后端 T25 已把该轮记为 cancelled，新会话（首问被中断时）也能立刻出现在侧栏 */
+async function handleStop() {
   chatStore.stopGeneration()
+  await sessionStore.fetchSessions()
 }
 
 /** 错误气泡"重试"：同一问题 / 同一数据源 / 同一会话重发，成功后照常刷新会话侧栏 */
