@@ -25,6 +25,7 @@
         <agentscope.version>2.0.2</agentscope.version>
         <springdoc.version>2.6.0</springdoc.version>
         <lombok.version>1.18.36</lombok.version>
+        <hive-jdbc.version>4.0.1</hive-jdbc.version>
     </properties>
 
     <dependencies>
@@ -74,6 +75,42 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- classpath 优先权钉子：hive-jdbc standalone 内嵌了未重定位的同名包
+             （slf4j-api 1.7.30、commons-logging、commons-lang3 3.12.0、commons-codec 1.15）。
+             Maven 类路径上该 jar 排在应用侧这些库之前（含传递依赖），不显式声明的话，
+             内嵌旧版类会遮蔽应用栈——实测 slf4j 1.7 的 LoggerFactory/NOPLoggerFactory
+             直接导致 Logback 启动失败（"LoggerFactory is not a Logback LoggerContext"）。
+             以下依赖声明在 hive-jdbc 之前，保证应用侧版本类路径优先；版本由
+             spring-boot-starter-parent BOM 统一管理 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jcl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+        </dependency>
+
+        <!-- Hive JDBC Driver：standalone classifier 单 jar（约 43MB，出厂 shade 已含
+             Hadoop/Hive/Thrift/Guava 等全部运行依赖，该坐标 POM 无任何 compile/runtime
+             传递依赖，无需 exclusions）。相比常规坐标拉起的全套依赖树，
+             单 jar 不存在版本仲裁面，与 Spring Boot 类路径的冲突面被压到一个 jar 内 -->
+        <dependency>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-jdbc</artifactId>
+            <version>${hive-jdbc.version}</version>
+            <classifier>standalone</classifier>
             <scope>runtime</scope>
         </dependency>
 
