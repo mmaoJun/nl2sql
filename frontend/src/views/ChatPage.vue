@@ -31,39 +31,47 @@
 
     <div class="chat-body">
       <div class="chat-messages" ref="messagesRef">
-        <div v-if="chatStore.messages.length === 0" class="empty-state">
-          <div class="empty-icon">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              <path d="M8 9h8M8 13h4"/>
-            </svg>
-          </div>
-          <h3 class="empty-title">开始对话</h3>
-          <p class="empty-desc">输入自然语言问题，自动生成 SQL 并查询结果</p>
-          <div class="example-queries">
-            <button
-              v-for="q in exampleQueries"
-              :key="q"
-              class="example-chip"
-              @click="fillQuery(q)"
-            >
-              {{ q }}
-            </button>
-          </div>
+        <!-- 首屏/切会话的轻量骨架屏（el-skeleton，避免长时间空白） -->
+        <div v-if="restoring" class="chat-skeleton">
+          <el-skeleton :rows="3" animated />
+          <el-skeleton :rows="3" animated class="skeleton-gap" />
         </div>
 
-        <template v-for="(msg, idx) in chatStore.messages" :key="idx">
-          <ChatMessage :message="msg" />
-          <TracePanel v-if="msg.trace && msg.trace.length" :trace="msg.trace" />
-          <ResultTable v-if="msg.result" :result="msg.result" />
+        <template v-else>
+          <div v-if="chatStore.messages.length === 0" class="empty-state">
+            <div class="empty-icon">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                <path d="M8 9h8M8 13h4"/>
+              </svg>
+            </div>
+            <h3 class="empty-title">开始对话</h3>
+            <p class="empty-desc">输入自然语言问题，自动生成 SQL 并查询结果</p>
+            <div class="example-queries">
+              <button
+                v-for="q in exampleQueries"
+                :key="q"
+                class="example-chip"
+                @click="fillQuery(q)"
+              >
+                {{ q }}
+              </button>
+            </div>
+          </div>
+
+          <template v-for="(msg, idx) in chatStore.messages" :key="idx">
+            <ChatMessage :message="msg" @retry="handleRetry(msg)" />
+            <TracePanel v-if="msg.trace && msg.trace.length" :trace="msg.trace" />
+            <ResultTable v-if="msg.result" :result="msg.result" />
+          </template>
+
+          <div v-if="chatStore.loading" class="loading-indicator">
+            <div class="loading-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="loading-text">正在分析并生成 SQL...</span>
+          </div>
         </template>
-
-        <div v-if="chatStore.loading" class="loading-indicator">
-          <div class="loading-dots">
-            <span></span><span></span><span></span>
-          </div>
-          <span class="loading-text">正在分析并生成 SQL...</span>
-        </div>
       </div>
     </div>
 
@@ -72,6 +80,7 @@
         :disabled="chatStore.loading || !selectedDsId"
         :loading="chatStore.loading"
         @send="handleSend"
+        @stop="handleStop"
       />
     </div>
     </div>
@@ -103,6 +112,8 @@ const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
 const schemaVisible = ref(false)
+// 首屏 / 切会话的历史加载中（骨架屏），与 chatStore.loading（生成中）分开
+const restoring = ref(false)
 
 const exampleQueries = [
   '查询所有用户',
@@ -138,6 +149,7 @@ async function restoreSession(id) {
     return
   }
   loadError.value = false
+  restoring.value = true
   try {
     const turns = await sessionStore.loadTurns(id)
     chatStore.loadFromTurns(turns)
@@ -158,6 +170,8 @@ async function restoreSession(id) {
       // 网络或后端问题：列表保留，对话区给一个重试入口，不把用户踢出当前会话
       loadError.value = true
     }
+  } finally {
+    restoring.value = false
   }
 }
 
@@ -186,6 +200,22 @@ async function handleSend(message) {
   // "第一问不带 → 用响应 ChatResult.sessionId 保存 → 后续追问带上"），
   // 因此这里不再预建会话，避免"点了新建但没提问"之外再产生空会话
   const result = await chatStore.sendMessage(message, selectedDsId.value, sessionStore.currentSessionId)
+  if (result && result.sessionId && result.sessionId !== sessionStore.currentSessionId) {
+    sessionStore.setCurrent(result.sessionId)
+  }
+  await sessionStore.fetchSessions()
+  await nextTick()
+  scrollToBottom()
+}
+
+/** 停止生成：abort 进行中的 SSE 流；UI 收尾（loading 复位、光标消失、消息标记）由 store 完成 */
+function handleStop() {
+  chatStore.stopGeneration()
+}
+
+/** 错误气泡"重试"：同一问题 / 同一数据源 / 同一会话重发，成功后照常刷新会话侧栏 */
+async function handleRetry(msg) {
+  const result = await chatStore.retryMessage(msg)
   if (result && result.sessionId && result.sessionId !== sessionStore.currentSessionId) {
     sessionStore.setCurrent(result.sessionId)
   }
@@ -298,6 +328,15 @@ onMounted(async () => {
   justify-content: center;
   height: 100%;
   text-align: center;
+}
+
+/* 骨架屏：仅占对话区，padding 与消息区对齐 */
+.chat-skeleton {
+  padding: 8px 0;
+}
+
+.skeleton-gap {
+  margin-top: 24px;
 }
 
 .empty-icon {

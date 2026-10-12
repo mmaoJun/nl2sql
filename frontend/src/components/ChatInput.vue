@@ -11,6 +11,17 @@
         @keydown.enter.exact.prevent="handleSend"
       ></textarea>
       <button
+        v-if="loading"
+        class="stop-btn"
+        title="停止生成"
+        @click="handleStop"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
+      <button
+        v-else
         class="send-btn"
         :class="{ active: inputText.trim() && !disabled }"
         :disabled="!inputText.trim() || disabled"
@@ -23,7 +34,8 @@
       </button>
     </div>
     <div class="input-hint">
-      <span v-if="loading">正在生成回答，请稍候...</span>
+      <span v-if="loading">正在生成回答，点右侧按钮可停止</span>
+      <span v-else-if="stoppedNotice" class="hint-stopped">已停止生成</span>
       <span v-else-if="disabled && !inputText.trim()">请先选择数据源</span>
       <span v-else>Enter 发送 · Shift+Enter 换行</span>
     </div>
@@ -31,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   disabled: Boolean,
@@ -40,9 +52,13 @@ const props = defineProps({
   loading: Boolean
 })
 
-const emit = defineEmits(['send'])
+const emit = defineEmits(['send', 'stop'])
 const inputText = ref('')
 const textareaRef = ref(null)
+// 停止后短暂提示"已停止生成"（loading 落下的那一刻闪现，助手气泡里另有持久标记）
+const stoppedNotice = ref(false)
+let stopRequested = false
+let noticeTimer = null
 
 function handleSend() {
   const text = inputText.value.trim()
@@ -50,6 +66,19 @@ function handleSend() {
   emit('send', text)
   inputText.value = ''
 }
+
+function handleStop() {
+  stopRequested = true
+  emit('stop')
+}
+
+watch(() => props.loading, (value) => {
+  if (value || !stopRequested) return
+  stopRequested = false
+  stoppedNotice.value = true
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => { stoppedNotice.value = false }, 4000)
+})
 </script>
 
 <style scoped>
@@ -131,10 +160,34 @@ function handleSend() {
   transform: translateY(0);
 }
 
+.stop-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  border: 1px solid var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.stop-btn:hover {
+  background: var(--el-color-danger-light-8);
+  border-color: var(--el-color-danger);
+}
+
 .input-hint {
   text-align: center;
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 8px;
+}
+
+.hint-stopped {
+  color: var(--el-color-warning);
 }
 </style>

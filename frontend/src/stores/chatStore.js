@@ -14,6 +14,8 @@ function toTimestamp(value) {
 export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
   const loading = ref(false)
+  // 当前进行中的流式请求控制器："停止生成"按钮 abort 它（同一时刻只有一个在跑，loading 挡住并发）
+  let activeController = null
 
   /** 追加一条用户消息（提问内容） */
   function addUserMessage(content) {
@@ -41,6 +43,12 @@ export const useChatStore = defineStore('chat', () => {
       trace: [],
       streaming: true,
       errorCode: null,
+      errorMessage: null,
+      stopped: false,
+      // 记录本轮请求参数：SSE ERROR 后"重试"要原样重发（同一问题、同一会话）
+      question: null,
+      datasourceId: null,
+      sessionId: null,
       timestamp: Date.now()
     })
     return messages.value[messages.value.length - 1]
@@ -54,7 +62,8 @@ export const useChatStore = defineStore('chat', () => {
         break
       case 'TOOL_CALL':
       case 'TOOL_RESULT':
-        // 轨迹按到达顺序原样入列（TOOL_CALL 带 input，TOOL_RESULT 带 summary/success）
+        // 轨迹按到达顺序原样入列（TOOL_CALL 带 input，TOOL_RESULT 带 summary/success），
+        // 配对展示由 TracePanel 按 callId 完成
         assistant.trace.push(data)
         break
       case 'FINAL':
@@ -67,8 +76,10 @@ export const useChatStore = defineStore('chat', () => {
         assistant.model = data?.model ? { model: data.model } : null
         break
       case 'ERROR':
-        assistant.errorCode = data?.code || null
-        assistant.content = assistant.content || (data?.message || '执行失败')
+        // message 单独留字段：错误气泡要原样展示它 + "重试"按钮，
+        // 已渲染的增量文本保留在 content 里不覆盖（可能是有价值的部分回答）
+        assistant.errorCode = data?.code ?? -1
+        assistant.errorMessage = data?.message || '执行失败'
         break
       default:
         break
@@ -92,7 +103,9 @@ export const useChatStore = defineStore('chat', () => {
       })
       const fallback = t.status === 'ok'
         ? `查询完成，共 ${t.rowCount ?? 0} 行（耗时 ${t.executionTimeMs ?? 0}ms）· 历史记录，如需数据请重新提问`
-        : (t.errorMessage || '查询失败')
+        : t.status === 'cancelled'
+          ? '已停止生成'
+          : (t.errorMessage || '查询失败')
       restored.push({
         role: 'system',
         content: (t.answer && t.answer.trim()) ? t.answer : fallback,
@@ -100,6 +113,10 @@ export const useChatStore = defineStore('chat', () => {
         result: null,
         model: t.modelName ? { model: t.modelName } : null,
         trace: [],
+        // 取消轮次（T25 后端新增 cancelled 状态）刷新后照样给出"已停止生成"标记
+        stopped: t.status === 'cancelled',
+        errorCode: null,
+        errorMessage: null,
         timestamp: toTimestamp(t.createdAt)
       })
     }
@@ -107,7 +124,48 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-   * 提问并流式接收回答。
+   * 流式提问核心：追加（可选的）用户消息 + 助手占位消息，驱动 SSE 并把事件落到消息上。
+   *
+   * @param {boolean} [options.appendUser=true] 是否追加用户消息（重试时用户消息已在列表里）
+   */
+  async function runStream(question, datasourceId, sessionId, { appendUser = true } = {}) {
+    if (appendUser) addUserMessage(question)
+    const assistant = addAssistantMessage()
+    assistant.question = question
+    assistant.datasourceId = datasourceId
+    assistant.sessionId = sessionId ?? null
+    loading.value = true
+
+    const controller = new AbortController()
+    activeController = controller
+    try {
+      return await streamChat({
+        question,
+        datasourceId,
+        sessionId,
+        signal: controller.signal,
+        onEvent: (event) => applyEvent(assistant, event)
+      })
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        // 用户点"停止生成"：不算错误，收尾为"已停止生成"（后端 T25 会把该轮记为 cancelled）
+        assistant.stopped = true
+      } else {
+        // streamChat 内已处理认证跳转；这里只把错误落到消息上，不再二次弹提示
+        assistant.errorCode = error?.code ?? -1
+        assistant.errorMessage = error?.message || '未知错误'
+      }
+      return null
+    } finally {
+      if (activeController === controller) activeController = null
+      // streaming 置 false：流式光标随之消失，abort 后不残留半截光标
+      assistant.streaming = false
+      loading.value = false
+    }
+  }
+
+  /**
+   * 提问并流式接收回答（新问题）。
    *
    * @param {string} question     自然语言问题
    * @param {number} datasourceId 数据源 ID
@@ -115,25 +173,26 @@ export const useChatStore = defineStore('chat', () => {
    * @returns {Promise<object|null>} FINAL 载荷（含 sessionId，供调用方保存会话），失败返回 null
    */
   async function sendMessage(question, datasourceId, sessionId) {
-    addUserMessage(question)
-    const assistant = addAssistantMessage()
-    loading.value = true
+    return runStream(question, datasourceId, sessionId)
+  }
 
-    try {
-      return await streamChat({
-        question,
-        datasourceId,
-        sessionId,
-        onEvent: (event) => applyEvent(assistant, event)
-      })
-    } catch (error) {
-      // streamChat 内已处理认证跳转；这里只把错误落到消息上，不再二次弹提示
-      assistant.errorCode = error.code || null
-      assistant.content = assistant.content || `请求失败：${error.message || '未知错误'}`
-      return null
-    } finally {
-      assistant.streaming = false
-      loading.value = false
+  /**
+   * 重试一条失败的回答：移除失败气泡，用同一问题 / 同一数据源 / 同一会话重发（不重复追问行）。
+   * 会话归属沿用失败时的 sessionId；若当时后端还没回填（首问失败），则为空 → 后端按新会话处理。
+   */
+  async function retryMessage(failed) {
+    if (loading.value || !failed || !failed.question) return null
+    const idx = messages.value.indexOf(failed)
+    if (idx === -1) return null
+    messages.value.splice(idx, 1)
+    return runStream(failed.question, failed.datasourceId, failed.sessionId, { appendUser: false })
+  }
+
+  /** 停止生成：abort 进行中的流（UI 收尾在 runStream 的 finally/catch 里） */
+  function stopGeneration() {
+    if (activeController) {
+      activeController.abort()
+      activeController = null
     }
   }
 
@@ -141,5 +200,5 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
   }
 
-  return { messages, loading, sendMessage, clearMessages, loadFromTurns, addUserMessage }
+  return { messages, loading, sendMessage, retryMessage, stopGeneration, clearMessages, loadFromTurns, addUserMessage }
 })

@@ -15,9 +15,18 @@
       </div>
     </div>
     <div :class="['message-bubble', message.role === 'user' ? 'message-user' : 'message-system']">
-      <div class="message-content">
+      <div v-if="message.content || message.streaming" class="message-content">
         {{ message.content }}<span v-if="message.streaming" class="stream-cursor"></span>
       </div>
+
+      <!-- SSE ERROR / 请求异常：错误气泡内展示后端 message + "重试"（重发同一问题、沿用同一会话） -->
+      <div v-if="message.errorMessage" class="error-bubble">
+        <div class="error-text">{{ message.errorMessage }}</div>
+        <button class="error-retry-btn" @click="$emit('retry')">重试</button>
+      </div>
+
+      <!-- 停止生成后的收尾标记（T25 后端把该轮记为 cancelled，刷新会话后同样显示） -->
+      <div v-if="message.stopped" class="stopped-note">已停止生成</div>
 
       <div v-if="message.sql" class="sql-display">
         <div class="sql-header">
@@ -63,6 +72,9 @@ defineProps({
     required: true
   }
 })
+
+// 重试：由 ChatPage 调用 chatStore.retryMessage（同一问题 / 同一数据源 / 同一会话重发）
+defineEmits(['retry'])
 </script>
 
 <style scoped>
@@ -117,6 +129,57 @@ defineProps({
   margin-bottom: 4px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 错误气泡：danger 语义色（Element Plus 变量），内含"重试" */
+.error-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-9);
+  border-radius: var(--radius);
+}
+
+.error-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-color-danger);
+  word-break: break-word;
+}
+
+.error-retry-btn {
+  flex-shrink: 0;
+  padding: 3px 12px;
+  border: 1px solid var(--el-color-danger-light-5);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--el-color-danger);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.error-retry-btn:hover {
+  background: var(--el-color-danger);
+  border-color: var(--el-color-danger);
+  color: #fff;
+}
+
+/* 停止生成标记：warning 语义色，与错误态区分 */
+.stopped-note {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: 4px;
+  padding: 1px 8px;
 }
 
 /* 流式渲染中的输入光标（TEXT_DELTA 逐段追加时给一个"还在写"的视觉锚点） */

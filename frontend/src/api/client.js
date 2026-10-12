@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 import router from '../router'
 
 /**
- * 未认证统一处理：清凭证 + 跳登录。
+ * 未认证统一处理：清凭证 + 轻提示 + 跳登录（带原路由，登录后可回跳）。
  *
  * 后端返回 403（Spring Security 默认入口点，T10 实测；不是 401），
  * axios 拦截器与 SSE 客户端（chatStream.js，fetch 通道）共用这份逻辑。
@@ -12,9 +12,10 @@ import router from '../router'
 export function handleUnauthenticated() {
   localStorage.removeItem('token')
   localStorage.removeItem('username')
-  if (router.currentRoute.value.path !== '/login') {
-    router.push('/login')
-    ElMessage.error('登录已过期，请重新登录')
+  const current = router.currentRoute.value
+  if (current.path !== '/login') {
+    ElMessage.warning('登录已过期，请重新登录')
+    router.push({ path: '/login', query: { redirect: current.fullPath } })
   }
 }
 

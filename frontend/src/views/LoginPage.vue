@@ -58,16 +58,24 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { login, register } from '../api/endpoints'
 import { ElMessage } from 'element-plus'
 
+const route = useRoute()
 const router = useRouter()
 const activeTab = ref('login')
 const loading = ref(false)
 
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', password: '', confirmPassword: '' })
+
+/** 登录后回跳原路由（router 守卫 / 403 拦截器会带 redirect query）；
+    只接受站内绝对路径，排除 // 开头的协议相对地址，避免开放重定向 */
+function resolveRedirect() {
+  const target = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  return target.startsWith('/') && !target.startsWith('//') ? target : '/chat'
+}
 
 async function handleLogin() {
   if (!loginForm.username || !loginForm.password) {
@@ -80,7 +88,7 @@ async function handleLogin() {
     localStorage.setItem('token', res.data.token)
     localStorage.setItem('username', res.data.username)
     ElMessage.success('登录成功')
-    router.push('/chat')
+    router.push(resolveRedirect())
   } catch (e) {
     // handled by interceptor
   } finally {

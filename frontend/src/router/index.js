@@ -30,7 +30,8 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && !token) {
-    next('/login')
+    // 带上原路由，登录成功后回跳（T26 体验项）
+    next({ path: '/login', query: { redirect: to.fullPath } })
   } else {
     next()
   }
