@@ -1,0 +1,17 @@
+{
+  "name": "nl2sql-mock-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "T23 演示用本地 mock API 服务：REST /api/departments + GraphQL /graphql（X-API-KEY 鉴权），部门预算数据与 nlp2sql_sample.departments 对齐",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "graphql": "16.11.0"
+  }
+}
