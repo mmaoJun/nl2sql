@@ -66,7 +66,8 @@ import java.util.regex.Pattern;
  * 逐表经 WebHDFS OPEN 拉到临时文件 → 新建一次性 H2 内存库
  * （{@code jdbc:h2:mem:nl2sql_hdfs_<uuid>;DB_CLOSE_DELAY=-1}，用完 DROP ALL OBJECTS +
  * SHUTDOWN 释放）→ 建表并执行 → 查完即弃。不做跨查询缓存（演示文件很小，如需缓存
- * 按 path+mtime 记）。
+ * 按 path+mtime 记）。SQL 引用不存在的文件表时不进 H2 执行，直接返回
+ * <b>引导式报错</b>（含本数据源可用表清单，T25 对齐 T23 API 适配器口径）。
  *
  * <p><b>建表方式</b>：{@code CREATE TABLE ... AS SELECT} + {@code CSVREAD}。
  * CSVREAD 的列定义参数实测不支持类型（第二参数按列名列表解析）、也没有 skip 选项，
@@ -248,7 +249,21 @@ public class HdfsFileAdapter implements DataSourceAdapter {
                 + ";DB_CLOSE_DELAY=-1";
         try {
             // SQL 中的表引用 → 按需只拉取被引用的 CSV（JSqlParser 提取）
-            List<CsvFile> toLoad = resolveReferencedFiles(extractTableNames(sql));            try (Connection conn = DriverManager.getConnection(dbUrl, "sa", "")) {
+            List<CsvFile> allFiles = collectCsvFiles();
+            List<String> unknownRefs = new ArrayList<>();
+            List<CsvFile> toLoad = resolveReferencedFiles(extractTableNames(sql), allFiles, unknownRefs);
+            if (!unknownRefs.isEmpty()) {
+                // 引导式报错（对齐 T23 API 适配器）：原始 H2 报错（Table "X" not found）对模型没有
+                // 引导性——应指出本数据源实际可用的文件表清单（表名 = 文件名去 .csv）与命名约定，
+                // 让模型照着清单自纠，而不是反复重探把迭代预算耗光。
+                result.setSuccess(false);
+                result.setErrorMessage("表 " + unknownRefs + " 在 HDFS 数据源中不存在。本数据源可用表"
+                        + "（HDFS 文件名去 .csv 后缀即表名）: " + availableTableNames(allFiles)
+                        + "；系统不支持跨数据源 JOIN，其他数据源或历史轮次的数据请直接引用其数值进行对比。");
+                result.setExecutionTimeMs(System.currentTimeMillis() - startTime);
+                return result;
+            }
+            try (Connection conn = DriverManager.getConnection(dbUrl, "sa", "")) {
                 for (CsvFile file : toLoad) {
                     loadTable(conn, file);
                 }
@@ -431,15 +446,18 @@ public class HdfsFileAdapter implements DataSourceAdapter {
      * 把 SQL 引用的表名解析为 CSV 文件列表（去重、保持 SQL 中的出现顺序）。
      *
      * <p>表名归一化：去引号 → 取最后一段（容忍 {@code db.table} 前缀）→ 不区分大小写匹配
-     * 文件名。匹配不到的文件跳过，交给 H2 在执行时报"表不存在"（错误信息更贴近用户 SQL）。
+     * 文件名。匹配不到的表引用记入 {@code unknownRefs}（引导式报错用），
+     * 与 T23 的 API 适配器一致：不在 H2 执行阶段抛原始引擎报错。
      *
-     * @param tableRefs JSqlParser 提取的原始表名
+     * @param tableRefs  JSqlParser 提取的原始表名
+     * @param allFiles   根目录下全部 CSV 文件（调用方先收集，避免重复递归列举）
+     * @param unknownRefs 输出参数：本数据源中没有对应文件的表引用
      * @return 需要载入的 CSV 文件
-     * @throws Exception 目录列举失败
      */
-    private List<CsvFile> resolveReferencedFiles(List<String> tableRefs) throws Exception {
+    private static List<CsvFile> resolveReferencedFiles(List<String> tableRefs, List<CsvFile> allFiles,
+                                                        List<String> unknownRefs) {
         Map<String, CsvFile> byName = new LinkedHashMap<>();
-        for (CsvFile file : collectCsvFiles()) {
+        for (CsvFile file : allFiles) {
             byName.putIfAbsent(file.tableName().toLowerCase(Locale.ROOT), file);
         }
         Map<String, CsvFile> ordered = new LinkedHashMap<>();
@@ -447,12 +465,18 @@ public class HdfsFileAdapter implements DataSourceAdapter {
             String normalized = normalizeTableName(ref);
             CsvFile file = byName.get(normalized);
             if (file == null) {
-                log.warn("SQL 引用的表 {} 在根目录 {} 下无对应 .csv 文件，交由 H2 报错", ref, settings.root());
+                log.warn("SQL 引用的表 {} 无对应 .csv 文件，返回引导式报错", ref);
+                unknownRefs.add(ref);
                 continue;
             }
             ordered.putIfAbsent(file.path(), file);
         }
         return new ArrayList<>(ordered.values());
+    }
+
+    /** 可用文件表清单（表名 = 文件名去 .csv；同名去重、保持文件名排序），引导式报错用。 */
+    private static List<String> availableTableNames(List<CsvFile> files) {
+        return files.stream().map(CsvFile::tableName).distinct().toList();
     }
 
     private static String normalizeTableName(String ref) {

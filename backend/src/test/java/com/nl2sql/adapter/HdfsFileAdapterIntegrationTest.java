@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * HdfsFileAdapter 连接本机 HDFS（docker/hive-hdfs 的 WebHDFS 9870，根目录 /demo）集成验证。
  *
- * <p>三段（与 T22 派发说明对应）：
+ * <p>四段（与 T22 派发说明及 T25 项 3 对应）：
  * <ol>
  *   <li>{@link #factoryRegistersHdfsTypeMetadata()}——类型注册元数据（code/displayName/defaultPort），
  *       不依赖任何外部服务；</li>
@@ -50,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       经 {@link DataSourceFactory} 用新入库数据源（name='HDFS 演示目录'，非硬编码 id）
  *       取适配器，断言 CSV 元数据（含子目录递归发现）与分组查询的真实返回，
  *       以中文城市名验证 UTF-8 往返；</li>
+ *   <li>{@link #unknownTableFailsWithAvailableFileTableHint()}——T25 引导式报错：
+ *       查询不存在的文件表 → success=false 且 errorMessage 含可用表清单（不经 LLM）；</li>
  *   <li>{@link #hdfsAgentAnswersOrdersPerCity()}——Agent 端到端 1 例（真实本地 7B，
  *       1 次问答预算）：直接装配默认 ReActAgent 提问，断言回答含真实数据痕迹。</li>
  * </ol>
@@ -155,6 +157,37 @@ class HdfsFileAdapterIntegrationTest {
                 "工厂临时适配器连接测试应通过");
         assertTrue(dataSourceService.testConnection(ds.getId()),
                 "服务层连接测试应通过");
+    }
+
+    /**
+     * T25 项 3：SQL 引用不存在的文件表 → 引导式报错（对齐 T23 API 适配器口径）。
+     *
+     * <p>断言 {@code success=false} 且 errorMessage 含可用文件表清单
+     * （表名 = 文件名去 .csv 的约定提示），而不是 H2 的原始 "Table ... not found"。
+     * 不消耗 LLM 预算（纯适配器路径）。
+     */
+    @Test
+    void unknownTableFailsWithAvailableFileTableHint() {
+        Assumptions.assumeTrue(portReachable(3306), "本机 MySQL 未启动，跳过 HDFS 引导式报错验证");
+        Assumptions.assumeTrue(portReachable(9870), "本机 WebHDFS 未启动，跳过 HDFS 引导式报错验证");
+        DataSource ds = hdfsDatasource();
+
+        DataSourceAdapter adapter = dataSourceFactory.getAdapter(ds.getId(), ds.getType(), ds.toAdapterConfig());
+        cachedAdapterId = ds.getId();
+
+        QueryResult result = adapter.executeQuery(
+                "SELECT * FROM not_exists_file LIMIT 5", 5);
+
+        assertFalse(result.isSuccess(), "引用不存在的表应返回 success=false");
+        String error = result.getErrorMessage();
+        assertNotNull(error, "引导式报错应带 errorMessage");
+        assertFalse(error.contains("not found") && !error.contains("hive_orders"),
+                "不应是 H2 原始 Table not found 报错: " + error);
+        assertTrue(error.contains("hive_orders") && error.contains("hive_products"),
+                "errorMessage 应含可用文件表清单（hive_orders / hive_products），实际: " + error);
+        assertTrue(error.contains(".csv"), "errorMessage 应提示表名 = 文件名去 .csv 的约定，实际: " + error);
+        assertTrue(error.contains("not_exists_file"), "errorMessage 应指出被拒绝的表引用，实际: " + error);
+        System.out.println("[T25-hdfs] 引导式报错原文: " + error);
     }
 
     @Test
