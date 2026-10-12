@@ -1,0 +1,11 @@
+(node:31636) [UNDICI-WS] Warning: WebSockets are experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[A] 未登录访问 /settings → /login?redirect=/settings（期望 /login?redirect=/settings）
+[shot] T26-A1-guard-redirect-login.png
+[net] 500 /api/v1/auth/register
+[A] 注册结果 toast: 网络错误
+[net] 500 /api/v1/auth/login
+[A] 登录后落点: /login?redirect=/settings（期望 /settings，验证回跳）
+[shot] T26-A2-login-redirect-back-settings.png
+[error] 登录未成功（仍在 /login），终止以免浪费 LLM 预算；toast=网络错误
+[done] 证据已写入 F:/FANG_ZHENG/nl2sql/docs/dispatch/T26-evidence/t26-results.json（SSE 请求共 0 条）

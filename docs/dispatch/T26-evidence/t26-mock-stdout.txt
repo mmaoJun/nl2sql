@@ -1,0 +1,49 @@
+(node:28656) [UNDICI-WS] Warning: WebSockets are experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[1] 填写用户名: t26mock
+[1] 填写密码: mock123456
+[1] 点击登录: true
+[mock] POST /api/v1/auth/login
+[mock] GET /api/v1/datasources
+[mock] GET /api/v1/sessions
+[1] 登录后: {"url":"/chat","token":"mock-t26-token","user":"t26mock","toast":"登录成功"}
+[mock] POST /api/v1/auth/login
+[mock] GET /api/v1/datasources
+[mock] GET /api/v1/datasources/supported-types
+[1b] 带 redirect 登录后落点: {"url":"/settings","token":true}（期望 /settings）
+[shot] T26-M1b-redirect-back-settings.png
+[mock] GET /api/v1/datasources
+[mock] GET /api/v1/sessions
+[mock] GET /api/v1/sessions/901/turns
+[2] 首屏骨架屏: {"骨架屏可见":true,"骨架行数":8}
+[shot] T26-M2-skeleton-initial.png
+[2] 历史回显: ["统计 users 表中共有多少个用户","系统中共有 200 个用户。","查询所有用户","已停止生成"]
+[4] 载入帧数: 10
+[4] 流式中: {"加载中":true,"停止按钮":true,"轨迹条目(流式中)":["list_tables/成功","get_schema/进行中"],"流式光标":1}
+[shot] T26-M4a-streaming-pending.png
+[mock] GET /api/v1/sessions
+[4] 轨迹: {"条目数(配对后)":4,"steps":["list_tables/成功","get_schema/成功","execute_sql/成功","execute_sql/失败"],"摘要均单行省略(nowrap)":true,"失败条边框色":"rgb(245, 108, 108)","失败状态色":"rgb(245, 108, 108)","答案":"系统中共有 200 个用户。","表格":{"列":["#","COUNT(*)"],"首行":["1","200"]}}
+[shot] T26-M4b-trace-paired-failed.png
+[4] 展开: {"展开态":true,"全文块数":2,"入参全文(前80字)":"{ \"datasource_id\": 5 }"}
+[shot] T26-M4c-trace-expanded.png
+[mock] POST /api/v1/sessions
+[5] 载入帧数(慢速): 10
+[5] 停止前: {"加载中":true,"轨迹条目":1,"流式光标":1}
+[shot] T26-M5a-streaming-before-stop.png
+[mock] GET /api/v1/sessions
+[mock] GET /api/v1/sessions
+[5] 停止后: {"加载中(false=正确)":false,"停止按钮(false=正确)":false,"发送按钮恢复":true,"残留流式光标(0=正确)":0,"气泡停止标记":"已停止生成","输入区提示":"已停止生成","mock侧abort计数":1,"mock侧completed":1,"轨迹条目":1}
+[shot] T26-M5b-after-stop.png
+[5] 流已冻结: {"停止时条目":1,"2.5s后条目":1,"2.5s后仍在加载":false}
+[mock] POST /api/v1/sessions
+[6] 重试场景前会话: 902
+[mock] GET /api/v1/sessions
+[6] 错误气泡: {"错误文本":"数据源不存在或无权访问","重试按钮":"重试","加载中(false=正确)":false,"发送按钮恢复":true}
+[shot] T26-M6a-error-bubble.png
+[mock] GET /api/v1/sessions
+[6] 重试: {"错误气泡已移除":true,"mock侧全部请求":["/api/v1/chat/stream?question=统计+users+表中共有多少个用户&datasourceId=5&sessionId=901","/api/v1/chat/stream?question=查询年龄大于25岁的用户&datasourceId=5&sessionId=902","/api/v1/chat/stream?question=查询所有用户&datasourceId=5&sessionId=902","/api/v1/chat/stream?question=查询所有用户&datasourceId=5&sessionId=902"],"答案":"系统中共有 200 个用户。","用户消息":["查询所有用户"]}
+[shot] T26-M6b-after-retry-success.png
+[mock] GET /api/v1/sessions
+[7] 403: {"URL":"/login?redirect=/chat","提示toast":"登录已过期，请重新登录"}
+[shot] T26-M7-403-toast-redirect.png
+[done] 断言写入 F:/FANG_ZHENG/nl2sql/docs/dispatch/T26-evidence/t26-mock-results.json

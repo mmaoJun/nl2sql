@@ -1,0 +1,122 @@
+{
+  "user": "t26ui660404",
+  "startedAt": "2026-10-12T09:17:40.404Z",
+  "phases": {
+    "guardRedirect": "/login?redirect=/settings",
+    "registerToast": "注册成功，请登录",
+    "afterLoginUrl": "/settings",
+    "selectedDatasource": "",
+    "traceQ1": {
+      "条目数(配对后)": 3,
+      "steps": [
+        {
+          "tool": "list_tables",
+          "status": "成功",
+          "入参摘要": "{\"datasource_id\":5}",
+          "入参title": "{\"datasource_id\":5}",
+          "结果摘要": "[{\"tableName\":\"addresses\",\"comment\":\"收货地址\",\"columns\":null},{\"tableName\":\"api_access_logs\",\"comment\":\"API访问日志\",\"columns\":null},{\"tableName\":\"cache_statistics\",\"comment\":\"缓存统计\",\"columns\":null},{\"tableName\":\"categories\",\"comment\":\"商品分类\",\"columns\":null},{\"tableName\":\"coupons\",\"comment\":\"优惠券\",\"columns\":n",
+          "结果title": "[{\"tableName\":\"addresses\",\"comment\":\"收货地址\",\"columns\":null},{\"tableName\":\"api_access_logs\",\"comment\":\"API访问日志\",\"columns\":null},{\"tableName\":\"cache_statistics\",\"comment\":\"缓存统计\",\"columns\":null},{\"tableName\":\"categories\",\"comment\":\"商品分类\",\"columns\":null},{\"tableName\":\"coupons\",\"comment\":\"优惠券\",\"columns\":n",
+          "摘要单行省略": true,
+          "展开态": false
+        },
+        {
+          "tool": "get_schema",
+          "status": "成功",
+          "入参摘要": "{\"datasource_id\":5,\"table_name\":\"users\"}",
+          "入参title": "{\"datasource_id\":5,\"table_name\":\"users\"}",
+          "结果摘要": "[{\"columnName\":\"id\",\"dataType\":\"int\",\"columnType\":\"int\",\"comment\":\"\",\"columnKey\":\"PRI\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"name\",\"dataType\":\"varchar\",\"columnType\":\"varchar(50)\",\"comment\":\"姓名\",\"columnKey\":\"\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"email\",\"dataType\":\"va",
+          "结果title": "[{\"columnName\":\"id\",\"dataType\":\"int\",\"columnType\":\"int\",\"comment\":\"\",\"columnKey\":\"PRI\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"name\",\"dataType\":\"varchar\",\"columnType\":\"varchar(50)\",\"comment\":\"姓名\",\"columnKey\":\"\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"email\",\"dataType\":\"va",
+          "摘要单行省略": true,
+          "展开态": false
+        },
+        {
+          "tool": "execute_sql",
+          "status": "成功",
+          "入参摘要": "{\"datasource_id\":5,\"sql\":\"SELECT COUNT(*) AS user_count FROM users LIMIT 1\"}",
+          "入参title": "{\"datasource_id\":5,\"sql\":\"SELECT COUNT(*) AS user_count FROM users LIMIT 1\"}",
+          "结果摘要": "{\"columns\":[\"user_count\"],\"rows\":[{\"user_count\":200}],\"rowCount\":1,\"executionTimeMs\":9,\"success\":true,\"errorMessage\":null}",
+          "结果title": "{\"columns\":[\"user_count\"],\"rows\":[{\"user_count\":200}],\"rowCount\":1,\"executionTimeMs\":9,\"success\":true,\"errorMessage\":null}",
+          "摘要单行省略": false,
+          "展开态": false
+        }
+      ],
+      "答案": "共有 200 个用户。",
+      "结果行数": "1 条记录"
+    },
+    "traceExpanded": {
+      "展开态": true,
+      "全文块数": 2,
+      "入参全文前120字": "{\n  \"datasource_id\": 5\n}"
+    },
+    "skeleton": {
+      "骨架屏可见": true,
+      "骨架行数": 8
+    },
+    "stopInFlight": {
+      "加载中": true,
+      "停止按钮": true,
+      "已渲染轨迹条目": 1,
+      "流式光标": 1
+    },
+    "afterStop": {
+      "加载中(应为false)": false,
+      "停止按钮(应为false)": false,
+      "发送按钮恢复": true,
+      "发送按钮disabled": true,
+      "残留流式光标(应为0)": 0,
+      "气泡停止标记": "已停止生成",
+      "输入区提示": "已停止生成"
+    },
+    "stopTurnStatus": {
+      "sessionId": 460,
+      "turns": [
+        {
+          "id": 541,
+          "question": "查询年龄大于25岁的用户",
+          "status": "cancelled"
+        }
+      ],
+      "lastStatus": "cancelled"
+    },
+    "stopAfterReload": {
+      "停止标记": [
+        "已停止生成"
+      ],
+      "历史消息": [
+        "查询年龄大于25岁的用户",
+        "已停止生成"
+      ]
+    },
+    "errorBubble": {
+      "错误文本": "",
+      "重试按钮": "",
+      "加载中(应为false)": false
+    },
+    "retry": {
+      "错误气泡已移除": true,
+      "轨迹条目": [
+        "list_tables",
+        "list_tables",
+        "list_tables",
+        "list_tables",
+        "list_tables"
+      ],
+      "答案": "对不起，我无法继续执行查询。上文多次尝试调用 `list_tables` 工具，但返回的结果都是“数据源不存在”。请确认数据源 ID 是否正确，并确保数据源存在。",
+      "用户消息条数": [
+        "查询所有用户"
+      ]
+    },
+    "retrySessionSame": true,
+    "forbidden": {
+      "URL": "/login?redirect=/chat",
+      "提示toast": "登录已过期，请重新登录"
+    }
+  },
+  "sseRequests": [
+    "http://127.0.0.1:5173/api/v1/chat/stream?question=统计+users+表中共有多少个用户&datasourceId=5",
+    "http://127.0.0.1:5173/api/v1/chat/stream?question=查询年龄大于25岁的用户&datasourceId=5&sessionId=460",
+    "http://127.0.0.1:5173/api/v1/chat/stream?question=查询所有用户&datasourceId=99999&sessionId=461",
+    "http://127.0.0.1:5173/api/v1/chat/stream?question=这条不会真正执行&datasourceId=5&sessionId=461"
+  ],
+  "finishedAt": "2026-10-12T09:18:59.683Z"
+}

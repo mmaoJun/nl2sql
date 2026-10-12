@@ -1,0 +1,140 @@
+{
+  "startedAt": "2026-10-12T09:15:16.448Z",
+  "phases": {
+    "login": {
+      "url": "/chat",
+      "token": "mock-t26-token",
+      "user": "t26mock",
+      "toast": "登录成功"
+    },
+    "redirectBack": {
+      "url": "/settings",
+      "token": true
+    },
+    "skeleton": {
+      "骨架屏可见": true,
+      "骨架行数": 8
+    },
+    "historyRestored": [
+      "统计 users 表中共有多少个用户",
+      "系统中共有 200 个用户。",
+      "查询所有用户",
+      "已停止生成"
+    ],
+    "midStream": {
+      "加载中": true,
+      "停止按钮": true,
+      "轨迹条目(流式中)": [
+        "list_tables/成功",
+        "get_schema/进行中"
+      ],
+      "流式光标": 1
+    },
+    "trace": {
+      "条目数(配对后)": 4,
+      "steps": [
+        {
+          "tool": "list_tables",
+          "status": "成功",
+          "入参": "{\"datasource_id\":5}",
+          "入参title": true,
+          "结果": "[{\"tableName\":\"addresses\",\"comment\":\"收货地",
+          "结果title": true,
+          "默认折叠": true
+        },
+        {
+          "tool": "get_schema",
+          "status": "成功",
+          "入参": "{\"datasource_id\":5,\"table_name\":\"users\"}",
+          "入参title": true,
+          "结果": "[{\"columnName\":\"id\",\"dataType\":\"int\",\"co",
+          "结果title": true,
+          "默认折叠": true
+        },
+        {
+          "tool": "execute_sql",
+          "status": "成功",
+          "入参": "{\"datasource_id\":5,\"sql\":\"SELECT COUNT(*",
+          "入参title": true,
+          "结果": "{\"columns\":[\"COUNT(*)\"],\"rows\":[{\"COUNT(",
+          "结果title": true,
+          "默认折叠": true
+        },
+        {
+          "tool": "execute_sql",
+          "status": "失败",
+          "入参": "{\"datasource_id\":5,\"sql\":\"SELECT * FROM ",
+          "入参title": true,
+          "结果": "SQL 执行失败：Table 'nlp2sql_test.not_exists'",
+          "结果title": true,
+          "默认折叠": true
+        }
+      ],
+      "摘要均单行省略(nowrap)": true,
+      "失败条边框色": "rgb(245, 108, 108)",
+      "失败状态色": "rgb(245, 108, 108)",
+      "答案": "系统中共有 200 个用户。",
+      "表格": {
+        "列": [
+          "#",
+          "COUNT(*)"
+        ],
+        "首行": [
+          "1",
+          "200"
+        ]
+      }
+    },
+    "traceExpanded": {
+      "展开态": true,
+      "全文块数": 2,
+      "入参全文(前80字)": "{ \"datasource_id\": 5 }"
+    },
+    "collapseBack": true,
+    "stopBefore": {
+      "加载中": true,
+      "轨迹条目": 1,
+      "流式光标": 1
+    },
+    "stopAfter": {
+      "加载中(false=正确)": false,
+      "停止按钮(false=正确)": false,
+      "发送按钮恢复": true,
+      "残留流式光标(0=正确)": 0,
+      "气泡停止标记": "已停止生成",
+      "输入区提示": "已停止生成",
+      "mock侧abort计数": 1,
+      "mock侧completed": 1,
+      "轨迹条目": 1
+    },
+    "stopFrozen": {
+      "停止时条目": 1,
+      "2.5s后条目": 1,
+      "2.5s后仍在加载": false
+    },
+    "errorBubble": {
+      "错误文本": "数据源不存在或无权访问",
+      "重试按钮": "重试",
+      "加载中(false=正确)": false,
+      "发送按钮恢复": true
+    },
+    "retry": {
+      "错误气泡已移除": true,
+      "mock侧全部请求": [
+        "/api/v1/chat/stream?question=统计+users+表中共有多少个用户&datasourceId=5&sessionId=901",
+        "/api/v1/chat/stream?question=查询年龄大于25岁的用户&datasourceId=5&sessionId=902",
+        "/api/v1/chat/stream?question=查询所有用户&datasourceId=5&sessionId=902",
+        "/api/v1/chat/stream?question=查询所有用户&datasourceId=5&sessionId=902"
+      ],
+      "答案": "系统中共有 200 个用户。",
+      "用户消息": [
+        "查询所有用户"
+      ]
+    },
+    "forbidden": {
+      "URL": "/login?redirect=/chat",
+      "提示toast": "登录已过期，请重新登录"
+    }
+  },
+  "finishedAt": "2026-10-12T09:15:35.729Z"
+}

@@ -1,0 +1,12 @@
+{
+  "user": "t26ui-precheck",
+  "startedAt": "2026-10-12T09:07:13.589Z",
+  "phases": {
+    "guardRedirect": "/login?redirect=/settings",
+    "registerToast": "网络错误",
+    "afterLoginUrl": "/login?redirect=/settings"
+  },
+  "error": "登录未成功（仍在 /login），终止以免浪费 LLM 预算；toast=网络错误",
+  "sseRequests": [],
+  "finishedAt": "2026-10-12T09:07:21.886Z"
+}
