@@ -6,6 +6,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ToolSchema;
@@ -39,6 +40,9 @@ import java.util.stream.Collectors;
  * {@code {"name": "execute_sql", "arguments": {"datasource_id": 5, "sql": "SELECT ..."}}}
  * （模型不输出 Ollama 模板要求的 {@code <tool_call>} 包裹标签，Ollama 解析不到）。
  * 默认 formatter 会把该 JSON 当普通文本回答，ReAct 循环直接结束，工具永远不会被调用。
+ * <b>T25 起固化</b>：既然调用本就走文本协议，{@link #applyTools} 不再把 {@code tools}
+ * 数组放进请求（Ollama 的 qwen 模板见 tools 会注入自己的 {@code <tool_call>} 脚手架，
+ * 与本协议冲突、导致模型偶尔只回寒暄不落 JSON——复现数据见该方法注释）。
  *
  * <p><b>还原规则</b>：在 {@link OpenAIChatFormatter#parseResponse} 之后做一次受限还原——
  * 仅当满足全部条件时才改写为结构化 {@link ToolUseBlock}：
@@ -57,7 +61,8 @@ import java.util.stream.Collectors;
  * 实测（见 T5 报告）把工具结果包装成中文叙述——"工具 X 已执行，返回结果（JSON）：…
  * 请继续：输出下一个工具调用的 JSON，或给出最终答案（中文）。"——模型即稳定续链。
  * 因此 {@link #doFormat} 只改写<b>发给模型的副本</b>，AgentScope 记忆中的原始
- * 工具结果不被污染。
+ * 工具结果不被污染；工具调用<b>失败</b>时改用专属续链指令要求修正重试
+ * （{@link #TRAILER_RETRY}，T25：失败也走"能答则答"会让模型编数据）。
  *
  * <p>本适配器只挂本地模型通道；云端 DashScope 原生结构化 tool_calls 不经此路径。
  * 由于文本化还原需要拿到<b>完整</b>响应体，本地通道配 {@code stream(false)}
@@ -82,17 +87,43 @@ public class TextualToolCallFormatter extends OpenAIChatFormatter {
     private static final String TRAILER_CONTINUE =
             "请立即继续：输出下一个工具调用的 JSON（不要输出解释、不要展示 SQL、不要向用户提问）。";
 
-    /** 查询类工具（execute_sql）结果后的指令：能答则答，失败则修正重试，均不得反问用户。 */
+    /** 查询类工具（execute_sql）<b>成功</b>后的指令：能答则答，尚未查到时修正重试，均不得反问用户。 */
     private static final String TRAILER_QUERY_DONE =
             "请立即继续：若查询数据已能回答用户问题，直接用中文给出最终答案（先给结论与关键数据）；"
                     + "否则输出下一个工具调用的 JSON（如修正后的 execute_sql）。不要向用户提问。";
 
+    /**
+     * 工具调用<b>失败</b>后的指令（T25）：明确"本轮没有数据"，要求修正后重试、禁止编造。
+     *
+     * <p>背景（T25 实测）：旧实现失败也走 {@link #TRAILER_QUERY_DONE}（"能答则答"），
+     * 本地 7B 拿到跨源 JOIN 的引导式报错后 0/4 修正重试——一半直接复述错误信息收尾，
+     * 一半<b>凭猜测编出预算数值</b>（幻觉回答）；换成本条指令后 4/4 修正重试、5/5 无幻觉。
+     */
+    private static final String TRAILER_RETRY =
+            "本轮工具调用失败、没有拿到任何查询数据。请立即修正后重新调用工具（只使用本数据源的表，"
+                    + "即上文 list_tables 返回的清单，不要引用其他数据源的表名，改用分别查询后用文字对比），"
+                    + "在拿到成功结果前不要给出最终答案，也不要凭猜测编造数据。";
+
     /** 最近一次请求注册过的工具名，作为还原白名单。 */
     private final Set<String> registeredToolNames = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 只登记工具名白名单，<b>不把 tools 数组放进请求</b>（覆盖父类实现，T25）。
+     *
+     * <p>背景（T25 实测）：Ollama 侧 qwen2.5-coder 的聊天模板检测到请求携带 {@code tools}
+     * 时会额外注入它自己的 {@code <tool_call>} 工具脚手架说明，与本通道 sysPrompt 教的
+     * "纯文本 JSON 协议"互相冲突。冲突下模型在本应发起工具调用的回合（典型：带会话历史的
+     * 第二轮提问）约半数概率退化成只输出"好的，请稍等……"的寒暄文本、不落任何 JSON，
+     * ReAct 循环把它当最终答案提前结束——{@code CrossSourceFusionE2ETest} 因此红测。
+     * 同一构造请求探针（system + 历史 + 本轮问题，各 8-10 次）：
+     * 带 tools 数组 JSON 命中 9/20，去掉 tools 数组 11/11。
+     *
+     * <p>本通道的工具调用本来就全靠 {@link #parseResponse} 从文本还原，请求里的 tools 数组
+     * 只承担"让模型知道有哪些工具"的职责——该职责由 sysPrompt 的"可用工具"清单完整覆盖，
+     * 去掉数组不影响模型认知与工具执行；白名单注册保留（还原校验仍需要）。
+     */
     @Override
     public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
-        super.applyTools(request, tools);
         if (tools != null) {
             tools.forEach(schema -> {
                 if (schema.getName() != null) {
@@ -182,7 +213,7 @@ public class TextualToolCallFormatter extends OpenAIChatFormatter {
             if (block instanceof ToolResultBlock result) {
                 String framedText = "工具 " + result.getName() + " 已执行，返回结果（JSON）：\n"
                         + textOf(result.getOutput())
-                        + "\n" + trailerFor(result.getName());
+                        + "\n" + trailerFor(result);
                 framed.add(new ToolResultBlock(result.getId(), result.getName(),
                         List.of(TextBlock.builder().text(framedText).build()), result.getMetadata()));
             } else {
@@ -192,9 +223,26 @@ public class TextualToolCallFormatter extends OpenAIChatFormatter {
         return message.withContent(framed);
     }
 
-    /** execute_sql 之后是收尾（作答或修正重试），其余工具之后是继续探索。 */
-    private static String trailerFor(String toolName) {
-        return "execute_sql".equals(toolName) ? TRAILER_QUERY_DONE : TRAILER_CONTINUE;
+    /**
+     * 工具结果后的续链指令：失败（工具异常 state=ERROR / 业务返回 success=false）一律
+     * 要求修正重试；成功时 execute_sql 之后是收尾（作答或修正重试），其余工具之后是继续探索。
+     */
+    private static String trailerFor(ToolResultBlock result) {
+        if (isFailedResult(result)) {
+            return TRAILER_RETRY;
+        }
+        return "execute_sql".equals(result.getName()) ? TRAILER_QUERY_DONE : TRAILER_CONTINUE;
+    }
+
+    /**
+     * 工具结果是否为失败：工具字段状态非 SUCCESS（异常 / 拒绝 / 中断），
+     * 或输出文本是本项目的业务失败 QueryResult（{@code "success": false}）。
+     */
+    private static boolean isFailedResult(ToolResultBlock result) {
+        if (result.getState() != null && result.getState() != ToolResultState.SUCCESS) {
+            return true;
+        }
+        return textOf(result.getOutput()).replace(" ", "").contains("\"success\":false");
     }
 
     private static String textOf(List<ContentBlock> blocks) {
