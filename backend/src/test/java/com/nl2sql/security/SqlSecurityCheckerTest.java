@@ -13,7 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>对照课题安全要求逐项覆盖：
  * ① 关键词黑名单；② JSqlParser AST 校验（仅 SELECT 放行）；③ 堆叠查询；
- * ④ UNION 注入；⑤ 注释绕过；⑥ 字面量 / 引号标识符误伤；⑦ enforceLimit 行为。
+ * ④ UNION 注入；⑤ 注释绕过；⑥ 字面量 / 引号标识符误伤；⑦ enforceLimit 行为；
+ * ⑧ Hive 风格 SQL 专项（T25：真实 Hive 语法探路，覆盖反引号标识符、库名限定、
+ * LIMIT、GROUP BY + ORDER BY、常用函数，及针对这些形态的注入变体）。
  *
  * <p>重点是防误杀：列名里含有危险关键字子串（{@code created_at} 含 CREATE、
  * {@code updated_at} 含 UPDATE）时必须放行，否则所有时间趋势类查询都会被拦下；
@@ -215,6 +217,82 @@ class SqlSecurityCheckerTest {
 
         // 小写 limit 同样能识别为已有限制
         assertTrue(checker.enforceLimit("SELECT id FROM users limit 5", 50).endsWith("limit 5"));
+    }
+
+    // ---------- ⑧ Hive 风格 SQL 专项（T25） ----------
+
+    /**
+     * 应通过：Hive 写作习惯下的只读查询（语料取自本机 demo 库的真实表/列名）。
+     *
+     * <p>四个探路维度：反引号标识符（Hive 原生引用写法）、{@code demo.orders} 库名限定、
+     * {@code LIMIT n}、{@code GROUP BY + ORDER BY} 与 COUNT/SUM/AVG/ROUND 常用函数。
+     * 校验器与方言无关：反引号标识符在 L1/L3 扫描前被剥离，合法查询必须全数放行。
+     */
+    @Test
+    void allowsHiveStyleSelectQueries() {
+        // 反引号标识符（Hive 原生写法；JSqlParser 按带引号标识符解析）
+        assertValid("SELECT `order_id`, `amount`, `city` FROM `orders` LIMIT 10");
+        // 库名限定 + GROUP BY + ORDER BY + 常用函数（demo.orders 为本机 Hive 演示表）
+        assertValid("SELECT city, COUNT(*) AS cnt, SUM(amount) AS total_amount, "
+                + "AVG(amount) AS avg_amount, ROUND(AVG(amount), 2) AS rounded_avg "
+                + "FROM demo.orders GROUP BY city ORDER BY cnt DESC LIMIT 10");
+        // 库名与表名、列名、别名全部反引号限定
+        assertValid("SELECT `city`, COUNT(*) AS `cnt` FROM `demo`.`orders` "
+                + "GROUP BY `city` ORDER BY `cnt` DESC LIMIT 5");
+        // WHERE 过滤 + 聚合分组排序（Hive 常见报表句式）
+        assertValid("SELECT status, COUNT(*) AS cnt, ROUND(SUM(amount), 2) AS total "
+                + "FROM demo.orders WHERE amount > 100 GROUP BY status ORDER BY total DESC LIMIT 10");
+        // 反引号里的危险关键词同形词（`delete`/`create` 是列名而非关键字）不得误伤：
+        // 带引号标识符在 L1 扫描前已剥离
+        assertValid("SELECT `delete`, `create` FROM `feature_flags` ORDER BY `create` DESC LIMIT 10");
+    }
+
+    /**
+     * 应拒绝：Hive 风格 SQL 上的注入变体（库名限定不改写检测语义）。
+     *
+     * <p>三种形态：堆叠查询（分号后接第二条语句）、带库名的 UNION 注入
+     * （含 ALL / 括号 / DISTINCT 变体）、注释绕过（拆词、拆 UNION-SELECT、尾部藏语句）。
+     */
+    @Test
+    void blocksHiveStyleInjectionVariants() {
+        // 堆叠查询：纯 SELECT 堆叠在 L2（单语句解析失败）即拦；分号后接 DROP 由 L1 拦；
+        // 注释藏分号两种白名单层都放行，由 L3 堆叠检测兜住
+        assertRejected("SELECT order_id FROM demo.orders LIMIT 10; SELECT order_id FROM demo.products");
+        assertRejected("SELECT order_id FROM demo.orders LIMIT 10; DROP TABLE demo.orders");
+        SqlSecurityChecker.ValidationResult hiddenStacked = checker.validate(
+                "SELECT order_id FROM demo.orders /* ; SELECT 1 */");
+        assertFalse(hiddenStacked.valid(), "注释藏分号应拦截");
+        assertTrue(hiddenStacked.errorMessage().contains("堆叠"),
+                "应由堆叠检测拦截 → " + hiddenStacked.errorMessage());
+
+        // 带库名的 UNION 注入变体（普通 / ALL / 括号 / DISTINCT）
+        assertUnionBlocked("SELECT order_id FROM demo.orders UNION SELECT product_id FROM demo.products");
+        assertUnionBlocked("SELECT order_id FROM demo.orders UNION ALL SELECT product_id FROM demo.products");
+        assertUnionBlocked("SELECT order_id FROM demo.orders UNION ALL (SELECT product_id FROM demo.products)");
+        assertUnionBlocked("SELECT order_id FROM demo.orders UNION DISTINCT SELECT product_id FROM demo.products");
+
+        // 注释绕过变体：拆 UNION/SELECT、拆 UNION 词本身、注释藏尾部语句、注释藏分号
+        assertUnionBlocked("SELECT order_id FROM demo.orders UNION/**/SELECT product_id FROM demo.products");
+        assertRejected("SELECT order_id FROM demo.orders UN/**/ION SELECT product_id FROM demo.products");
+        assertRejected("SELECT order_id FROM demo.orders; -- DROP TABLE demo.orders");
+        assertRejected("SELECT order_id FROM demo.orders /* ; DELETE FROM demo.orders */");
+        // 注释拆词写 DDL：剥离注释后整词命中黑名单
+        assertRejected("DROP/**/TABLE demo.orders");
+    }
+
+    /**
+     * T2 遗留「合法 UNION 被保守拦截」的处置：T25 评估后<b>保留现状</b>，并显式锁定为预期行为。
+     *
+     * <p>理由：①本项目面向单表单源只读问答，UNION 属罕见需求，拦下的代价只是模型改写
+     * （分别查询后在文字层对比），放开的收益极小；②UNION 是 SQL 注入最常用的拼接手法，
+     * L2 的 AST 校验只看顶层语句类型、拦不住藏在第二个分支里的写操作，L3 的 UNION 模式
+     * 是主要防线；③放开需把模式匹配升级为「对两个分支分别做完整安全审计」，收益 / 风险不划算。
+     * 因此把"无任何注入嫌疑的自联合也被拦"锁定为刻意行为，避免后续被当成 bug 顺手放开。
+     */
+    @Test
+    void keepsLegitimateUnionBlockedByDesign() {
+        assertUnionBlocked("SELECT city, COUNT(*) AS cnt FROM demo.orders GROUP BY city "
+                + "UNION ALL SELECT 'total', COUNT(*) FROM demo.orders");
     }
 
     // ---------- 断言辅助 ----------
