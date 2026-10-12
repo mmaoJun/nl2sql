@@ -10,6 +10,7 @@ package com.nl2sql.common;
  *   <li>1005-1007 — 模型路由相关</li>
  *   <li>2xxx — NL2SQL 引擎相关</li>
  *   <li>3xxx — 会话相关</li>
+ *   <li>4xxx — 聊天通道相关</li>
  *   <li>9xxx — 系统级错误</li>
  * </ul>
  *
@@ -70,6 +71,13 @@ public final class ErrorCode {
      * "这个 id 确实存在，只是不是你的"，属于可枚举的信息泄露。
      */
     public static final int SESSION_NOT_FOUND = 3001;
+
+    // ── 聊天 4xxx ──
+
+    /** 聊天请求参数不合法（question 为空、datasourceId 缺失等） */
+    public static final int CHAT_INVALID_REQUEST = 4001;
+    /** 聊天执行失败（Agent 调用异常、模型服务不可达、执行超时等） */
+    public static final int CHAT_EXECUTION_FAILED = 4002;
 
     // ── 系统 9xxx ──
 

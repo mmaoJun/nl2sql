@@ -1,0 +1,54 @@
+package com.nl2sql.model.vo;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 聊天结果：{@code POST /api/v1/chat} 的响应数据，也是 SSE {@code FINAL} 事件的载荷。
+ *
+ * <p>{@code sql / columns / rows / rowCount} 取自本轮对话中最后一次<b>成功</b>的
+ * {@code execute_sql} 工具调用：SQL 为其入参中的 {@code sql} 字段，结果是工具返回
+ * JSON（{@code {columns, rows, rowCount, ...}}）的解析产物；解析失败时这些字段为空，
+ * 原始摘要仍保留在 {@link #trace} 中。
+ *
+ * <p>性能口径对应“流式”：{@link #firstEventMs} 为发起调用到首个 Agent 事件到达的耗时，
+ * {@link #latencyMs} 为发起调用到本轮完成的耗时。
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ChatResult {
+
+    /** 最终回答文本（AgentResultEvent 正文；缺失时可回退为正文增量拼接） */
+    private String answer;
+
+    /** 最后一次成功 execute_sql 的 SQL（解析失败为 null） */
+    private String sql;
+
+    /** 结果列名（解析失败为 null） */
+    private List<String> columns;
+
+    /** 结果数据行（解析失败为 null） */
+    private List<Map<String, Object>> rows;
+
+    /** 结果行数（解析失败为 0） */
+    private int rowCount;
+
+    /** 工具调用轨迹（按发生顺序） */
+    private List<AgentTraceItem> trace;
+
+    /** 本轮实际使用的模型名 */
+    private String model;
+
+    /** 本轮总耗时（毫秒） */
+    private long latencyMs;
+
+    /** 首个 Agent 事件到达耗时（毫秒） */
+    private long firstEventMs;
+}
