@@ -15,10 +15,8 @@
       </div>
     </div>
     <div :class="['message-bubble', message.role === 'user' ? 'message-user' : 'message-system']">
-      <div class="message-content">{{ message.content }}</div>
-
-      <div v-if="rewriteNote" :class="['rewrite-note', { failed: message.rewriteStatus === 'failed' }]">
-        {{ rewriteNote }}
+      <div class="message-content">
+        {{ message.content }}<span v-if="message.streaming" class="stream-cursor"></span>
       </div>
 
       <div v-if="message.sql" class="sql-display">
@@ -44,7 +42,8 @@
         </template>
         <template v-if="message.model">
           <span v-if="message.result" class="meta-divider"></span>
-          <span class="meta-item">模型: {{ message.model.provider }} / {{ message.model.model }}</span>
+          <!-- provider 可缺省（ChatResult 只回模型名）：拼出非空部分，避免出现 "模型: / qwen2.5-coder:7b" -->
+          <span class="meta-item">模型: {{ [message.model.provider, message.model.model].filter(Boolean).join(' / ') }}</span>
         </template>
       </div>
     </div>
@@ -52,31 +51,17 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-
-const props = defineProps({
+/**
+ * 消息气泡：用户提问 + 助手回答。
+ *
+ * 新架构没有追问改写层（T11：不迁 RewriteGate / QuestionRewriter），
+ * 原"已理解为 XX"的改写提示已随契约移除；多轮上下文由后端注入历史实现。
+ */
+defineProps({
   message: {
     type: Object,
     required: true
   }
-})
-
-/**
- * 改写提示。
- *
- * 改写错了用户必须能一眼看见并重新表述，而不是对着一个莫名的结果发呆 ——
- * 所以这条提示不是可选的润色，是改写功能的信任基础。
- * resolvedQuestion 为空或与原话相同时不显示（本轮未改写）；
- * failed 时显示降级说明，让用户知道系统没接住上下文。
- */
-const rewriteNote = computed(() => {
-  const m = props.message
-  if (m.role !== 'user') return ''
-  if (m.rewriteStatus === 'failed') return '未能理解上下文，已按原话查询'
-  if (m.resolvedQuestion && m.resolvedQuestion !== m.content) {
-    return `已理解为：${m.resolvedQuestion}`
-  }
-  return ''
 })
 </script>
 
@@ -130,23 +115,24 @@ const rewriteNote = computed(() => {
 
 .message-content {
   margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.rewrite-note {
-  margin: 6px 0 2px;
-  padding: 5px 10px;
-  border-left: 2px solid var(--primary-light);
-  background: var(--primary-bg);
-  border-radius: 0 6px 6px 0;
-  font-size: 12px;
-  color: var(--text);
-  line-height: 1.5;
+/* 流式渲染中的输入光标（TEXT_DELTA 逐段追加时给一个"还在写"的视觉锚点） */
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--primary);
+  animation: cursorBlink 1s steps(1) infinite;
 }
 
-.rewrite-note.failed {
-  border-left-color: var(--warning);
-  background: rgba(245, 158, 11, 0.08);
-  color: var(--text-muted);
+@keyframes cursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .sql-display {

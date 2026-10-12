@@ -18,7 +18,9 @@
           v-model="selectedDsId"
           :data-sources="dsStore.dataSources"
         />
-        <ModelSelector v-model="selectedModel" :models="models" />
+        <!-- 模型由后端 nl2sql.model.provider 配置决定，无按请求切换接口：ModelSelector 隐藏，
+             原位换成表结构入口（SchemaExplorer 走 /api/v1/metadata） -->
+        <el-button size="small" text :icon="Grid" @click="schemaVisible = true">表结构</el-button>
       </div>
     </div>
 
@@ -52,6 +54,7 @@
 
         <template v-for="(msg, idx) in chatStore.messages" :key="idx">
           <ChatMessage :message="msg" />
+          <TracePanel v-if="msg.trace && msg.trace.length" :trace="msg.trace" />
           <ResultTable v-if="msg.result" :result="msg.result" />
         </template>
 
@@ -67,24 +70,30 @@
     <div class="chat-input-area">
       <ChatInput
         :disabled="chatStore.loading || !selectedDsId"
+        :loading="chatStore.loading"
         @send="handleSend"
       />
     </div>
     </div>
+
+    <el-drawer v-model="schemaVisible" title="表结构浏览" size="440px">
+      <SchemaExplorer :datasource-id="selectedDsId" />
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { Grid } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { getModels } from '../api/endpoints'
 import ChatInput from '../components/ChatInput.vue'
 import ChatMessage from '../components/ChatMessage.vue'
 import ResultTable from '../components/ResultTable.vue'
+import TracePanel from '../components/TracePanel.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
-import ModelSelector from '../components/ModelSelector.vue'
+import SchemaExplorer from '../components/SchemaExplorer.vue'
 import SessionList from '../components/SessionList.vue'
 
 const chatStore = useChatStore()
@@ -93,27 +102,7 @@ const sessionStore = useSessionStore()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
-const models = ref([])
-const selectedModel = ref(localStorage.getItem('chatModel') || '')
-
-// 记住上次选择：做双模型对比时要反复切换，不记住就得每次重选
-watch(selectedModel, (v) => {
-  if (v) localStorage.setItem('chatModel', v)
-})
-
-async function loadModels() {
-  try {
-    const res = await getModels()
-    models.value = res.data || []
-  } catch (e) {
-    models.value = []
-    return
-  }
-  const remembered = models.value.find(m => m.id === selectedModel.value && m.available)
-  const fallback = models.value.find(m => m.defaultModel && m.available)
-      || models.value.find(m => m.available)
-  selectedModel.value = remembered ? remembered.id : (fallback ? fallback.id : '')
-}
+const schemaVisible = ref(false)
 
 const exampleQueries = [
   '查询所有用户',
@@ -128,6 +117,7 @@ function fillQuery(q) {
 }
 
 async function handleCreateSession() {
+  // 新建走 POST /api/v1/sessions（会话侧栏五端点之一），拿到会话后再提问即带 sessionId
   await sessionStore.startSession(selectedDsId.value)
   chatStore.clearMessages()
   loadError.value = false
@@ -192,21 +182,13 @@ async function handleRemoveSession(id) {
 async function handleSend(message) {
   if (!selectedDsId.value) return
 
-  // 后端不做隐式建会话：sessionId 为空是"无会话模式"，评测脚本靠这条语义保持单轮口径。
-  // 代价是首轮多一次请求，换来"点了新建但没提问不会产生空会话"。
-  let sessionId = sessionStore.currentSessionId
-  if (sessionId == null) {
-    try {
-      const session = await sessionStore.startSession(selectedDsId.value)
-      sessionId = session.id
-    } catch (e) {
-      // 建不出会话不该阻断提问：退回无会话模式，用户至少还能拿到查询结果。
-      // 这一轮的对话不会被记住，错误提示已由拦截器弹出。
-      sessionId = null
-    }
+  // 提问携带当前会话 id；为空时由后端自动建会话并在 FINAL 里回填（T11 契约：
+  // "第一问不带 → 用响应 ChatResult.sessionId 保存 → 后续追问带上"），
+  // 因此这里不再预建会话，避免"点了新建但没提问"之外再产生空会话
+  const result = await chatStore.sendMessage(message, selectedDsId.value, sessionStore.currentSessionId)
+  if (result && result.sessionId && result.sessionId !== sessionStore.currentSessionId) {
+    sessionStore.setCurrent(result.sessionId)
   }
-
-  await chatStore.sendMessage(message, selectedDsId.value, selectedModel.value, sessionId)
   await sessionStore.fetchSessions()
   await nextTick()
   scrollToBottom()
@@ -218,14 +200,17 @@ function scrollToBottom() {
   }
 }
 
-watch(() => chatStore.messages.length, scrollToBottom)
+// 跟随流式渲染滚动：消息条数不变但正文/轨迹在长的时候也要跟到底部
+const messagesDigest = computed(() => chatStore.messages
+  .reduce((sum, m) => sum + (m.content?.length || 0) + (m.trace?.length || 0), 0))
+
+watch(messagesDigest, scrollToBottom)
 
 onMounted(async () => {
   await dsStore.fetchDataSources()
   if (dsStore.dataSources.length > 0) {
     selectedDsId.value = dsStore.dataSources[0].id
   }
-  await loadModels()
   await sessionStore.fetchSessions()
   await restoreSession(sessionStore.currentSessionId)
 })

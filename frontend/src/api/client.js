@@ -2,6 +2,22 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
 
+/**
+ * 未认证统一处理：清凭证 + 跳登录。
+ *
+ * 后端返回 403（Spring Security 默认入口点，T10 实测；不是 401），
+ * axios 拦截器与 SSE 客户端（chatStream.js，fetch 通道）共用这份逻辑。
+ * 已在登录页时不重复提示/跳转（登录失败是业务码 401，不走这里）。
+ */
+export function handleUnauthenticated() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
+  if (router.currentRoute.value.path !== '/login') {
+    router.push('/login')
+    ElMessage.error('登录已过期，请重新登录')
+  }
+}
+
 const client = axios.create({
   baseURL: '/api/v1',
   timeout: 60000,
@@ -37,11 +53,10 @@ client.interceptors.response.use(
     return data
   },
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('username')
-      router.push('/login')
-      ElMessage.error('登录已过期，请重新登录')
+    // 后端未配置 exceptionHandling：未认证/凭证无效由 Spring Security 默认入口点返回
+    // HTTP 403（不是 401，T10 实测），两个状态码都按"未登录"处理统一跳登录
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      handleUnauthenticated()
     } else {
       ElMessage.error(error.response?.data?.message || '网络错误')
     }
