@@ -1,0 +1,26 @@
+{
+  "answer": "订单表中共有 500 条订单记录。",
+  "traceRows": [
+    "1list_tables调用{\"datasource_id\":5}",
+    "2list_tables结果[{\"tableName\":\"addresses\",\"comment\":\"收货地址\",\"columns\":null},{\"tableName\":\"api_access_logs\",\"comment\":\"API访问日志\",\"columns\":null},{\"tableName\":\"cache_statistics\",\"comment\":\"缓存统计\",\"columns\":null},{\"tableName\":\"categories\",\"comment\":\"商品分类\",\"columns\":null},{\"tableName\":\"coupons\",\"comment\":\"优惠券\",\"columns\":n成功",
+    "3get_schema调用{\"datasource_id\":5,\"table_name\":\"orders\"}",
+    "4get_schema结果[{\"columnName\":\"id\",\"dataType\":\"int\",\"columnType\":\"int\",\"comment\":\"\",\"columnKey\":\"PRI\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"order_no\",\"dataType\":\"varchar\",\"columnType\":\"varchar(32)\",\"comment\":\"订单编号\",\"columnKey\":\"\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"user_id\",\"dataT成功",
+    "5execute_sql调用{\"datasource_id\":5,\"sql\":\"SELECT count(*) FROM orders LIMIT 1\"}",
+    "6execute_sql结果{\"columns\":[\"count(*)\"],\"rows\":[{\"count(*)\":500}],\"rowCount\":1,\"executionTimeMs\":2,\"success\":true,\"errorMessage\":null}成功"
+  ],
+  "tableHeaders": [
+    "#",
+    "count(*)"
+  ],
+  "tableFirstRows": [
+    "1",
+    "500"
+  ],
+  "sql": "SELECT count(*) FROM orders LIMIT 1",
+  "resultCount": "1 条记录",
+  "metas": [
+    "1 列",
+    "1 行",
+    "模型: qwen2.5-coder:7b"
+  ]
+}

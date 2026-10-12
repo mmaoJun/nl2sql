@@ -1,0 +1,7 @@
+{
+  "answer": "系统仅支持只读查询。",
+  "traceRows": [],
+  "tableHeaders": [],
+  "tableFirstRows": [],
+  "sql": "SELECT COUNT(*) FROM users"
+}

@@ -1,0 +1,24 @@
+event:TOOL_CALL
+data:{"type":"TOOL_CALL","tool":"list_tables","callId":"call_229dd3235d7b4f29aa53","input":"{\"datasource_id\":5}"}
+
+event:TOOL_RESULT
+data:{"type":"TOOL_RESULT","tool":"list_tables","callId":"call_229dd3235d7b4f29aa53","summary":"[{\"tableName\":\"addresses\",\"comment\":\"收货地址\",\"columns\":null},{\"tableName\":\"api_access_logs\",\"comment\":\"API访问日志\",\"columns\":null},{\"tableName\":\"cache_statistics\",\"comment\":\"缓存统计\",\"columns\":null},{\"tableName\":\"categories\",\"comment\":\"商品分类\",\"columns\":null},{\"tableName\":\"coupons\",\"comment\":\"优惠券\",\"columns\":n","success":true}
+
+event:TOOL_CALL
+data:{"type":"TOOL_CALL","tool":"get_schema","callId":"call_6f66f7a66f924597854c","input":"{\"datasource_id\":5,\"table_name\":\"users\"}"}
+
+event:TOOL_RESULT
+data:{"type":"TOOL_RESULT","tool":"get_schema","callId":"call_6f66f7a66f924597854c","summary":"[{\"columnName\":\"id\",\"dataType\":\"int\",\"columnType\":\"int\",\"comment\":\"\",\"columnKey\":\"PRI\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"name\",\"dataType\":\"varchar\",\"columnType\":\"varchar(50)\",\"comment\":\"姓名\",\"columnKey\":\"\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"email\",\"dataType\":\"va","success":true}
+
+event:TOOL_CALL
+data:{"type":"TOOL_CALL","tool":"execute_sql","callId":"call_6725982d30ad4e1381f2","input":"{\"datasource_id\":5,\"sql\":\"SELECT COUNT(*) FROM users\"}"}
+
+event:TOOL_RESULT
+data:{"type":"TOOL_RESULT","tool":"execute_sql","callId":"call_6725982d30ad4e1381f2","summary":"{\"columns\":[\"COUNT(*)\"],\"rows\":[{\"COUNT(*)\":200}],\"rowCount\":1,\"executionTimeMs\":5,\"success\":true,\"errorMessage\":null}","success":true}
+
+event:TEXT_DELTA
+data:{"delta":"系统中共有 200 个用户。"}
+
+event:FINAL
+data:{"answer":"系统中共有 200 个用户。","sessionId":180,"sql":"SELECT COUNT(*) FROM users","columns":["COUNT(*)"],"rows":[{"COUNT(*)":200}],"rowCount":1,"trace":[{"type":"TOOL_CALL","tool":"list_tables","callId":"call_229dd3235d7b4f29aa53","input":"{\"datasource_id\":5}"},{"type":"TOOL_RESULT","tool":"list_tables","callId":"call_229dd3235d7b4f29aa53","summary":"[{\"tableName\":\"addresses\",\"comment\":\"收货地址\",\"columns\":null},{\"tableName\":\"api_access_logs\",\"comment\":\"API访问日志\",\"columns\":null},{\"tableName\":\"cache_statistics\",\"comment\":\"缓存统计\",\"columns\":null},{\"tableName\":\"categories\",\"comment\":\"商品分类\",\"columns\":null},{\"tableName\":\"coupons\",\"comment\":\"优惠券\",\"columns\":n","success":true},{"type":"TOOL_CALL","tool":"get_schema","callId":"call_6f66f7a66f924597854c","input":"{\"datasource_id\":5,\"table_name\":\"users\"}"},{"type":"TOOL_RESULT","tool":"get_schema","callId":"call_6f66f7a66f924597854c","summary":"[{\"columnName\":\"id\",\"dataType\":\"int\",\"columnType\":\"int\",\"comment\":\"\",\"columnKey\":\"PRI\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"name\",\"dataType\":\"varchar\",\"columnType\":\"varchar(50)\",\"comment\":\"姓名\",\"columnKey\":\"\",\"isNullable\":\"NO\",\"defaultValue\":null},{\"columnName\":\"email\",\"dataType\":\"va","success":true},{"type":"TOOL_CALL","tool":"execute_sql","callId":"call_6725982d30ad4e1381f2","input":"{\"datasource_id\":5,\"sql\":\"SELECT COUNT(*) FROM users\"}"},{"type":"TOOL_RESULT","tool":"execute_sql","callId":"call_6725982d30ad4e1381f2","summary":"{\"columns\":[\"COUNT(*)\"],\"rows\":[{\"COUNT(*)\":200}],\"rowCount\":1,\"executionTimeMs\":5,\"success\":true,\"errorMessage\":null}","success":true}],"model":"qwen2.5-coder:7b","latencyMs":5362,"firstEventMs":27}
+

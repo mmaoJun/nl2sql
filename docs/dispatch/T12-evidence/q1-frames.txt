@@ -1,0 +1,8 @@
+TOOL_CALL list_tables input={"datasource_id":5}
+TOOL_RESULT list_tables success=True summary=[{"tableName":"addresses","comment":"收货地址","columns":null},{"tableName":"api_acc
+TOOL_CALL get_schema input={"datasource_id":5,"table_name":"users"}
+TOOL_RESULT get_schema success=True summary=[{"columnName":"id","dataType":"int","columnType":"int","comment":"","columnKey"
+TOOL_CALL execute_sql input={"datasource_id":5,"sql":"SELECT COUNT(*) FROM users"}
+TOOL_RESULT execute_sql success=True summary={"columns":["COUNT(*)"],"rows":[{"COUNT(*)":200}],"rowCount":1,"executionTimeMs"
+TEXT_DELTA delta=系统中共有 200 个用户。
+FINAL answer=系统中共有 200 个用户。 sql=SELECT COUNT(*) FROM users columns=['COUNT(*)'] rows=[{'COUNT(*)': 200}] rowCount=1 model=qwen2.5-coder:7b sessionId=180 latencyMs=5362 firstEventMs=27

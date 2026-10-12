@@ -1,0 +1,6 @@
+211	180	�Ҹղ��ʵĵ�һ��������ʲô��	NULL
+210	180	users ���й��ж���λ�û���	SELECT COUNT(*) FROM users
+209	174	我刚才问的第一个问题是什么？	NULL
+208	174	users 表中共有多少位用户？	SELECT count(*) FROM users
+207	170	users 表中共有多少位用户？	SELECT count(*) FROM users
+206	169	orders 表中共有多少条订单记录？	SELECT count(*) FROM orders LIMIT 1

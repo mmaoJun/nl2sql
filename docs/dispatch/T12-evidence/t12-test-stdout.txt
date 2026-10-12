@@ -1,0 +1,7 @@
+[T12-api] 未认证访问 datasources/metadata -> HTTP 403
+[T12-api] supported-types=[DataSourceTypeInfo[code=mysql, displayName=MySQL, defaultPort=3306], DataSourceTypeInfo[code=postgresql, displayName=PostgreSQL, defaultPort=5432]]
+[T12-api] 列表 5 条，定位 nlp2sql_test -> id=5
+[T12-api] metadata/tables=25 张，users 列=[id, name, email, phone, age, gender, department_id, title, salary, hire_date, address, emergency_contact, emergency_phone, id_card, education, status, avatar_url, last_login_at, created_at, updated_at]
+[T12-api] metadata/refresh -> success
+[T12-api] 不可达数据源连接测试 -> HTTP 200 code=500 message=连接失败
+[T12-api] CRUD 环: create -> list -> test(失败语义) -> update -> 1001 -> 400 -> delete 全部通过

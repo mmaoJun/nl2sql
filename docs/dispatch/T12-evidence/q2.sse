@@ -1,0 +1,6 @@
+event:TEXT_DELTA
+data:{"delta":"系统仅支持只读查询。"}
+
+event:FINAL
+data:{"answer":"系统仅支持只读查询。","sessionId":180,"rowCount":0,"trace":[],"model":"qwen2.5-coder:7b","latencyMs":360,"firstEventMs":0}
+
