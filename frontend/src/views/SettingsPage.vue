@@ -5,7 +5,7 @@
         <h2 class="page-title">数据源管理</h2>
         <p class="page-desc">配置和管理数据库连接，用于 SQL 查询</p>
       </div>
-      <button class="btn-primary" @click="showDialog = true">
+      <button class="btn-primary" @click="openCreate">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
@@ -37,8 +37,12 @@
         <el-table-column prop="host" label="主机" min-width="140" />
         <el-table-column prop="port" label="端口" width="80" />
         <el-table-column prop="databaseName" label="数据库" min-width="130" />
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" width="270" fixed="right" align="center">
           <template #default="{ row }">
+            <button class="action-btn edit-btn" @click="openEdit(row)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+              编辑
+            </button>
             <button class="action-btn test-btn" @click="handleTest(row.id)" :disabled="testingId === row.id">
               <svg v-if="testingId !== row.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
               <span v-if="testingId === row.id">测试中...</span>
@@ -54,11 +58,11 @@
     </div>
 
     <Teleport to="body">
-      <div v-if="showDialog" class="dialog-overlay" @click.self="showDialog = false">
+      <div v-if="showDialog" class="dialog-overlay" @click.self="closeDialog">
         <div class="dialog-card">
           <div class="dialog-header">
-            <h3>新增数据源</h3>
-            <button class="dialog-close" @click="showDialog = false">
+            <h3>{{ editingId ? '编辑数据源' : '新增数据源' }}</h3>
+            <button class="dialog-close" @click="closeDialog">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -104,15 +108,15 @@
               </div>
               <div class="form-group flex-1">
                 <label class="form-label">密码</label>
-                <input v-model="form.password" type="password" class="form-input" placeholder="密码" />
+                <input v-model="form.password" type="password" class="form-input" :placeholder="editingId ? '留空表示不修改' : '密码'" />
               </div>
             </div>
           </div>
           <div class="dialog-footer">
-            <button class="btn-ghost" @click="showDialog = false">取消</button>
-            <button class="btn-primary" @click="handleCreate" :disabled="creating">
-              <span v-if="creating">创建中...</span>
-              <span v-else>创建</span>
+            <button class="btn-ghost" @click="closeDialog">取消</button>
+            <button class="btn-primary" @click="handleSubmit" :disabled="creating">
+              <span v-if="creating">保存中...</span>
+              <span v-else>{{ editingId ? '保存' : '创建' }}</span>
             </button>
           </div>
         </div>
@@ -124,7 +128,13 @@
 <script setup>
 import { ref, onMounted, reactive } from 'vue'
 import { useDataSourceStore } from '../stores/datasourceStore'
-import { createDataSource, deleteDataSource, testDataSource, getSupportedTypes } from '../api/endpoints'
+import {
+  createDataSource,
+  updateDataSource,
+  deleteDataSource,
+  testDataSource,
+  getSupportedTypes
+} from '../api/endpoints'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const dsStore = useDataSourceStore()
@@ -132,6 +142,8 @@ const showDialog = ref(false)
 const creating = ref(false)
 const testingId = ref(null)
 const supportedTypes = ref([])
+/** 当前编辑的数据源 id；为空表示新增模式（新增/编辑共用同一个对话框） */
+const editingId = ref(null)
 
 const form = reactive({
   name: '',
@@ -148,6 +160,40 @@ const TYPE_COLORS = { mysql: '#4479a1', postgresql: '#336791' }
 
 function typeColor(code) {
   return TYPE_COLORS[code] || '#64748b'
+}
+
+function openCreate() {
+  editingId.value = null
+  Object.assign(form, {
+    name: '',
+    type: 'mysql',
+    host: 'localhost',
+    port: 3306,
+    databaseName: '',
+    username: 'root',
+    password: ''
+  })
+  showDialog.value = true
+}
+
+function openEdit(row) {
+  editingId.value = row.id
+  Object.assign(form, {
+    name: row.name,
+    type: row.type,
+    host: row.host,
+    port: row.port,
+    databaseName: row.databaseName,
+    username: row.username,
+    // 后端列表密码已脱敏为 "******"；留空提交时按"不修改"处理（服务层同语义）
+    password: ''
+  })
+  showDialog.value = true
+}
+
+function closeDialog() {
+  showDialog.value = false
+  editingId.value = null
 }
 
 // 各类型的默认用户名，切换类型时仅在用户未改动时跟随切换
@@ -181,14 +227,20 @@ const headerStyle = {
   letterSpacing: '0.3px'
 }
 
-async function handleCreate() {
+/** 新增 / 编辑共用一个提交入口：编辑走 PUT（密码留空 → "******" 表示不修改） */
+async function handleSubmit() {
   creating.value = true
   try {
-    await createDataSource(form)
-    ElMessage.success('数据源创建成功')
-    showDialog.value = false
+    const payload = { ...form, password: form.password || '******' }
+    if (editingId.value) {
+      await updateDataSource(editingId.value, payload)
+      ElMessage.success('数据源已更新')
+    } else {
+      await createDataSource(payload)
+      ElMessage.success('数据源创建成功')
+    }
+    closeDialog()
     await dsStore.fetchDataSources()
-    Object.assign(form, { name: '', databaseName: '', password: '' })
   } catch (e) {
     // error handled by interceptor
   } finally {
@@ -205,16 +257,26 @@ async function handleTest(id) {
     } else {
       ElMessage.error('连接失败')
     }
+  } catch (e) {
+    // 连接失败时后端返回业务码 500 + "连接失败"，提示已由拦截器弹出
   } finally {
     testingId.value = null
   }
 }
 
 async function handleDelete(id) {
-  await ElMessageBox.confirm('确定要删除该数据源吗？', '确认', { type: 'warning' })
-  await deleteDataSource(id)
-  ElMessage.success('删除成功')
-  await dsStore.fetchDataSources()
+  try {
+    await ElMessageBox.confirm('确定要删除该数据源吗？', '确认', { type: 'warning' })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await deleteDataSource(id)
+    ElMessage.success('删除成功')
+    await dsStore.fetchDataSources()
+  } catch (e) {
+    // error handled by interceptor
+  }
 }
 
 onMounted(() => {
@@ -351,6 +413,12 @@ onMounted(() => {
 .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.edit-btn:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-bg);
 }
 
 .test-btn:hover:not(:disabled) {
