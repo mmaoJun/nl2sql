@@ -1,0 +1,104 @@
+package com.nl2sql.controller;
+
+import com.nl2sql.common.BusinessException;
+import com.nl2sql.common.ErrorCode;
+import com.nl2sql.model.dto.ApiResponse;
+import com.nl2sql.model.dto.ChatRequest;
+import com.nl2sql.model.vo.ChatResult;
+import com.nl2sql.model.vo.ChatStreamEvent;
+import com.nl2sql.service.ChatService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
+
+/**
+ * 聊天接口：同步问答 + SSE 流式。
+ *
+ * <p>契约（T12 前端按此对接）：
+ * <ul>
+ *   <li>{@code POST /api/v1/chat} — body {@code {question, datasourceId, sessionId?}}，
+ *       返回 {@code ApiResponse<ChatResult>}；</li>
+ *   <li>{@code GET /api/v1/chat/stream?question&datasourceId&sessionId} —
+ *       {@code text/event-stream}，事件名 {@code TEXT_DELTA}（{@code {delta}}，
+ *       本地通道可能缺失）/ {@code TOOL_CALL} / {@code TOOL_RESULT}（{@link com.nl2sql.model.vo.AgentTraceItem}）/
+ *       {@code FINAL}（载荷同 {@link ChatResult}，必定送达）/ {@code ERROR}
+ *       （{@code {code, message}}，发后终止）；正常结束即关闭连接。</li>
+ * </ul>
+ *
+ * <p>校验（两个入口一致）：question 非空、datasourceId 非空，
+ * 不合法抛 {@link BusinessException}（{@link ErrorCode#CHAT_INVALID_REQUEST}）。
+ * 认证由 T10 接入，会话由 T11 接入（sessionId 透传，当前忽略）。
+ *
+ * @see ChatService
+ */
+@RestController
+@RequestMapping("/api/v1/chat")
+@RequiredArgsConstructor
+@Slf4j
+public class ChatController {
+
+    private final ChatService chatService;
+
+    /**
+     * 同步问答：一次性返回完整结果（含轨迹与耗时）。
+     *
+     * @param request 聊天请求
+     * @return 统一响应体包装的聊天结果
+     */
+    @PostMapping
+    public ApiResponse<ChatResult> chat(@RequestBody ChatRequest request) {
+        if (request == null) {
+            throw new BusinessException(ErrorCode.CHAT_INVALID_REQUEST, "请求体不能为空");
+        }
+        validateArgs(request.getQuestion(), request.getDatasourceId());
+        ChatResult result = chatService.ask(request.getDatasourceId(), request.getQuestion(), request.getSessionId());
+        return ApiResponse.ok(result);
+    }
+
+    /**
+     * 流式问答：SSE 事件流（TEXT_DELTA / TOOL_CALL / TOOL_RESULT / FINAL / ERROR）。
+     *
+     * <p>超时由 {@code spring.mvc.async.request-timeout}（5 分钟）兜底；
+     * 客户端断开按框架默认处理（响应写失败即停止推送）。
+     *
+     * @param question     自然语言问题
+     * @param datasourceId 数据源 ID
+     * @param sessionId    会话 ID，可空（T11 接入）
+     * @return SSE 事件流
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<Object>> stream(
+            @RequestParam(value = "question", required = false) String question,
+            @RequestParam(value = "datasourceId", required = false) Long datasourceId,
+            @RequestParam(value = "sessionId", required = false) String sessionId) {
+        validateArgs(question, datasourceId);
+        return chatService.stream(datasourceId, question, sessionId)
+                .map(this::toServerSentEvent);
+    }
+
+    /** SSE 域事件 → 传输层事件（event 名直传，载荷由 Jackson 按运行时类型序列化）。 */
+    private ServerSentEvent<Object> toServerSentEvent(ChatStreamEvent event) {
+        return ServerSentEvent.builder()
+                .event(event.event())
+                .data(event.data())
+                .build();
+    }
+
+    /** 两个入口共用的参数校验（BusinessException 语义，见类注释）。 */
+    private void validateArgs(String question, Long datasourceId) {
+        if (question == null || question.isBlank()) {
+            throw new BusinessException(ErrorCode.CHAT_INVALID_REQUEST, "question 不能为空");
+        }
+        if (datasourceId == null) {
+            throw new BusinessException(ErrorCode.CHAT_INVALID_REQUEST, "datasourceId 不能为空");
+        }
+    }
+}
