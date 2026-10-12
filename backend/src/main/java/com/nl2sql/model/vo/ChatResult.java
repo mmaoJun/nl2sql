@@ -28,6 +28,14 @@ public class ChatResult {
     /** 最终回答文本（AgentResultEvent 正文；缺失时可回退为正文增量拼接） */
     private String answer;
 
+    /**
+     * 本轮问答所属会话 ID（{@code chat_sessions.id}）。
+     *
+     * <p>请求未带 sessionId 时服务端自动新建会话，前端应保存该值并在后续追问时回传；
+     * 无会话模式（会话创建失败降级）时为 null，JSON 中省略该字段。
+     */
+    private Long sessionId;
+
     /** 最后一次成功 execute_sql 的 SQL（解析失败为 null） */
     private String sql;
 

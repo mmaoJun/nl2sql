@@ -30,7 +30,7 @@ public class ChatRequest {
     @Schema(description = "数据源 ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "5")
     private Long datasourceId;
 
-    /** 会话 ID，可空；当前版本忽略该参数（T11 接入会话记忆后再生效） */
-    @Schema(description = "会话 ID，可空；当前版本忽略（T11 接入会话记忆）", example = "abc-123")
-    private String sessionId;
+    /** 会话 ID（{@code chat_sessions.id}），可空；为空时服务端自动新建会话并回填到 ChatResult */
+    @Schema(description = "会话 ID，可空；为空时自动新建会话（T11）", example = "12")
+    private Long sessionId;
 }

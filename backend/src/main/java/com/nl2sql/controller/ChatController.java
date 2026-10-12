@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import reactor.core.publisher.Flux;
 
 /**
@@ -38,7 +39,9 @@ import reactor.core.publisher.Flux;
  * <p>校验（两个入口一致）：question 非空、datasourceId 非空，
  * 不合法抛 {@link BusinessException}（{@link ErrorCode#CHAT_INVALID_REQUEST}）；
  * 请求体缺失或 JSON 非法同样返回 4001（{@link #handleUnreadableBody}），不再落全局兜底的 500。
- * 认证由 T10 接入，会话由 T11 接入（sessionId 透传，当前忽略）。
+ * 认证由 T10 接入，会话由 T11 接入：sessionId 为 {@code chat_sessions.id}，
+ * 非空走归属校验 + 历史注入，为空则自动新建会话（结果里回填 sessionId），
+ * 类型不是数字时同样返回 4001（{@link #handleTypeMismatch}）。
  *
  * @see ChatService
  */
@@ -72,16 +75,19 @@ public class ChatController {
      * <p>超时由 {@code spring.mvc.async.request-timeout}（5 分钟）兜底；
      * 客户端断开按框架默认处理（响应写失败即停止推送）。
      *
+     * <p>会话不存在/不属于当前用户（3001）等起始阶段错误在流开始前抛出，
+     * 按 {@link BusinessException} 语义返回 HTTP 200 + body 错误码。
+     *
      * @param question     自然语言问题
      * @param datasourceId 数据源 ID
-     * @param sessionId    会话 ID，可空（T11 接入）
+     * @param sessionId    会话 ID（{@code chat_sessions.id}），可空（为空时自动新建会话）
      * @return SSE 事件流
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> stream(
             @RequestParam(value = "question", required = false) String question,
             @RequestParam(value = "datasourceId", required = false) Long datasourceId,
-            @RequestParam(value = "sessionId", required = false) String sessionId) {
+            @RequestParam(value = "sessionId", required = false) Long sessionId) {
         validateArgs(question, datasourceId);
         return chatService.stream(datasourceId, question, sessionId)
                 .map(this::toServerSentEvent);
@@ -120,5 +126,20 @@ public class ChatController {
     public ApiResponse<Void> handleUnreadableBody(HttpMessageNotReadableException ex) {
         log.warn("[chat] 请求体缺失或 JSON 非法: {}", ex.getMessage());
         return ApiResponse.error(ErrorCode.CHAT_INVALID_REQUEST, "请求体不能为空或 JSON 格式非法");
+    }
+
+    /**
+     * 查询参数类型不匹配（典型场景：sessionId 传了非数字，T9 时期该参数是字符串）。
+     *
+     * <p>与手工参数校验同一语义返回 4001，而不是落到全局兜底的 HTTP 500/9999。
+     *
+     * @param ex 类型不匹配异常
+     * @return 4001 错误响应
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ApiResponse<Void> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        log.warn("[chat] 查询参数类型不匹配: name={} value={}", ex.getName(), ex.getValue());
+        return ApiResponse.error(ErrorCode.CHAT_INVALID_REQUEST,
+                "参数 " + ex.getName() + " 类型不合法");
     }
 }
