@@ -15,8 +15,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 /**
  * Spring Security 配置。
  *
- * <p>禁用 CSRF、设置无状态会话、放行认证接口和 Swagger 文档端点，
- * 其余请求均需 JWT 认证。在 {@link UsernamePasswordAuthenticationFilter}
+ * <p>禁用 CSRF、设置无状态会话、放行认证接口、部署探活与 Swagger 文档端点，
+ * 其余请求（chat / datasources / metadata 等）均需 JWT 认证。
+ * 在 {@link UsernamePasswordAuthenticationFilter}
  * 之前插入 {@link JwtAuthenticationFilter}。
  *
  * @see JwtAuthenticationFilter
@@ -45,6 +46,8 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
+                // 部署探活放行（旧实现无此接口，属本任务新增放行项；health 不依赖任何外部资源）
+                .requestMatchers("/api/v1/health").permitAll()
                 .requestMatchers("/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .anyRequest().authenticated()
             )

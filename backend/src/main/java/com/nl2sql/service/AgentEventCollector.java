@@ -240,6 +240,24 @@ public final class AgentEventCollector {
         return null;
     }
 
+    /**
+     * 本轮最后一次 execute_sql 调用入参中的 sql（<b>不论该次调用是否成功</b>）。
+     *
+     * <p>审计用：失败路径下 {@link ChatResult#getSql()} 为空（它只取成功的调用），
+     * 本方法仍能取到模型生成、被安全校验或执行环节拒绝的那支 SQL。
+     *
+     * @return SQL 文本；本轮未调用过 execute_sql 或入参非 JSON 时为 null
+     */
+    public String lastRequestedSql() {
+        for (int i = calls.size() - 1; i >= 0; i--) {
+            Call call = calls.get(i);
+            if (EXECUTE_SQL_TOOL.equals(call.name)) {
+                return extractSqlArgument(call);
+            }
+        }
+        return null;
+    }
+
     /** 从 execute_sql 入参 JSON 中取 sql 字段；解析失败返回 null（原文本已在 trace）。 */
     private String extractSqlArgument(Call call) {
         String inputText = call.input.toString();
