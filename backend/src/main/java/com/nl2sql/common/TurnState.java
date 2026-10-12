@@ -29,4 +29,12 @@ public final class TurnState {
      * rows 可用），单独一档便于后续评测统计"模型没说话"的占比。
      */
     public static final String TURN_EMPTY = "empty";
+    /**
+     * 本轮问答被客户端取消（SSE 订阅中断 / 连接关闭），原因见 error_message。
+     *
+     * <p>（T25 新增）与 {@link #TURN_FAILED} 分开取值：取消不是模型或引擎故障，
+     * 把它记成 failed 会让"模型/数据源出问题"的统计掺进"用户主动离开"。
+     * 列是 VARCHAR(20)、库端无枚举约束，新增取值仅为消费方（统计 / 前端）的区分符。
+     */
+    public static final String TURN_CANCELLED = "cancelled";
 }

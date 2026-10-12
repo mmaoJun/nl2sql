@@ -48,7 +48,7 @@ public class TurnVO {
     @Schema(description = "当时的端到端耗时（毫秒）")
     private Long executionTimeMs;
 
-    @Schema(description = "本轮结果：ok / failed / empty")
+    @Schema(description = "本轮结果：ok / failed / empty / cancelled")
     private String status;
 
     @Schema(description = "失败原因")

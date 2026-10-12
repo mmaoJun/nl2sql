@@ -3,7 +3,9 @@ package com.nl2sql.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nl2sql.common.TurnState;
 import com.nl2sql.mapper.AuditLogMapper;
+import com.nl2sql.mapper.ChatSessionMapper;
 import com.nl2sql.mapper.ChatTurnMapper;
 import com.nl2sql.mapper.DataSourceMapper;
 import com.nl2sql.mapper.UserMapper;
@@ -15,6 +17,7 @@ import com.nl2sql.model.dto.ApiResponse;
 import com.nl2sql.model.dto.LoginResponse;
 import com.nl2sql.model.vo.ChatResult;
 import com.nl2sql.model.vo.ChatStreamEvent;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -48,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -99,6 +103,22 @@ class ChatControllerIntegrationTest {
 
     @Autowired
     private ChatTurnMapper chatTurnMapper;
+
+    @Autowired
+    private ChatSessionMapper chatSessionMapper;
+
+    /** T25 断线用例自动新建的会话 id，结束后清理（连同轮次） */
+    private Long createdSessionId;
+
+    @AfterEach
+    void cleanup() {
+        if (createdSessionId != null) {
+            chatTurnMapper.delete(new LambdaQueryWrapper<ChatTurn>()
+                    .eq(ChatTurn::getSessionId, createdSessionId));
+            chatSessionMapper.deleteById(createdSessionId);
+            createdSessionId = null;
+        }
+    }
 
     /** 同步接口：一次完整问答，校验 answer / rows / latencyMs，并断言审计落库。 */
     @Test
@@ -259,6 +279,143 @@ class ChatControllerIntegrationTest {
 
     /** SSE 解析产物：事件名 + data（多行 data 以 \n 连接）。 */
     private record SseEvent(String name, String data) {
+    }
+
+    /**
+     * SSE 客户端中途断开（T25 项 1）：读满首个事件后主动关闭连接，
+     * 断言取消/断线路径同样落一条 {@code chat_turns}（status=cancelled）+ 一条审计。
+     *
+     * <p>构造方式：{@link HttpClient} 流式 body（{@code ofInputStream}）——响应到达后
+     * 读满首个 SSE 事件块（空行为界）即 {@code body.close()}，模拟"关页签 / 网络断开"。
+     * 底层连接关闭后，服务端下一次写事件即失败，Spring MVC 随之取消 Flux 订阅，
+     * 触发 {@code doFinally(CANCEL)} 收尾（无需等模型生成完，取消窗口足够短）。
+     *
+     * <p>T25 前该场景轮次与审计全部丢失；断言以"轮询等待落库"容忍取消检测的异步延迟。
+     * 本用例消耗 1 次真实 LLM 预算（问题短、中断早，实际只跑出首个事件）。
+     */
+    @Test
+    @Timeout(value = 300, unit = TimeUnit.SECONDS)
+    void sseClientDisconnectStillRecordsCancelledTurnAndAudit() throws Exception {
+        assumeLocalStackUp();
+        Long datasourceId = nlp2sqlTestDatasourceId();
+        Session session = registerAndLogin();
+        Long userId = userIdOf(session.username());
+
+        // 问题带唯一令牌：按问题文本轮询本用例的落库行，避免与历史/其他用例混淆
+        String question = "orders 表中共有多少条订单记录？（T25 断线用例 " + System.nanoTime() + "）";
+        URI uri = URI.create("http://127.0.0.1:" + port + "/api/v1/chat/stream?question="
+                + URLEncoder.encode(question, StandardCharsets.UTF_8)
+                + "&datasourceId=" + datasourceId);
+
+        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .header("Authorization", "Bearer " + session.token())
+                .timeout(Duration.ofMinutes(2))
+                .GET()
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        assertEquals(200, response.statusCode(), "SSE 应返回 HTTP 200");
+
+        // 读满首个事件块后主动断开（不读到 FINAL，保证取消发生在流中途）
+        InputStream body = response.body();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
+        SseEvent firstEvent = readOneEvent(reader);
+        assertNotNull(firstEvent, "SSE 流应至少产出一个事件");
+        assertNotEquals(ChatStreamEvent.EVENT_FINAL, firstEvent.name(),
+                "首个事件不应是 FINAL（否则取消窗口不成立），实际: " + firstEvent.name());
+        body.close();
+        System.out.println("[T25-cancel] 已读首个事件并断开连接: event=" + firstEvent.name()
+                + " data(前 120 字)=" + truncate(firstEvent.data(), 120));
+
+        // 轮询等待取消路径收尾落库（取消检测与收尾是异步的）
+        ChatTurn turn = awaitTurnByQuestion(question, Duration.ofSeconds(60));
+        createdSessionId = turn.getSessionId();
+
+        // ── chat_turns：一条 cancelled 轮次，字段口径对齐失败路径 ──
+        assertEquals(TurnState.TURN_CANCELLED, turn.getStatus(),
+                "断线后应落 cancelled 轮次，实际: " + turn.getStatus());
+        assertNotNull(turn.getSessionId(), "cancelled 轮次应挂在自动新建的会话下");
+        assertEquals(question, turn.getQuestion(), "轮次 question 应为用户原话");
+        assertEquals(datasourceId, turn.getDatasourceId(), "轮次应记本轮数据源");
+        assertNotNull(turn.getErrorMessage(), "取消原因应写入 error_message");
+        assertTrue(turn.getErrorMessage().contains("取消") || turn.getErrorMessage().contains("中断"),
+                "取消原因应注明客户端取消/连接中断，实际: " + turn.getErrorMessage());
+        assertEquals("ollama", turn.getModelProvider(), "本地通道 provider 应为 ollama");
+        assertNotNull(turn.getExecutionTimeMs(), "取消轮次应记耗时");
+        assertTrue(turn.getExecutionTimeMs() > 0, "取消轮次耗时应大于 0");
+
+        // ── audit_logs：对应用户最新一条审计，归因与取消语义一致 ──
+        AuditLog audit = auditLogMapper.selectOne(new LambdaQueryWrapper<AuditLog>()
+                .eq(AuditLog::getUserId, userId)
+                .orderByDesc(AuditLog::getId)
+                .last("LIMIT 1"));
+        assertNotNull(audit, "取消路径应落一条审计");
+        assertEquals(question, audit.getNlInput(), "审计 nlInput 应为用户原话");
+        assertEquals(datasourceId, audit.getDatasourceId(), "审计 datasourceId 应为本轮数据源");
+        assertEquals(turn.getSessionId(), audit.getSessionId(), "审计应带会话归因");
+        assertEquals(turn.getId(), audit.getTurnId(), "审计应带轮次归因");
+        assertEquals(Boolean.FALSE, audit.getExecutionSuccess(), "取消审计 executionSuccess 应为 false");
+        assertEquals(Boolean.FALSE, audit.getValidationPassed(),
+                "取消审计 validationPassed 应为 false（无成功的 execute_sql）");
+        assertEquals(turn.getErrorMessage(), audit.getErrorMessage(), "轮次与审计的取消原因应一致");
+
+        System.out.println("[T25-cancel] turn#" + turn.getId() + " sessionId=" + turn.getSessionId()
+                + " status=" + turn.getStatus() + " errorMessage=" + turn.getErrorMessage()
+                + " executionTimeMs=" + turn.getExecutionTimeMs());
+        System.out.println("[T25-cancel] audit#" + audit.getId() + " userId=" + audit.getUserId()
+                + " sessionId=" + audit.getSessionId() + " turnId=" + audit.getTurnId()
+                + " executionSuccess=" + audit.getExecutionSuccess()
+                + " validationPassed=" + audit.getValidationPassed());
+    }
+
+    /** 读一个完整 SSE 事件块（空行为界）；流在事件完成前结束时返回已读内容或 null。 */
+    private SseEvent readOneEvent(BufferedReader reader) throws Exception {
+        String eventName = null;
+        StringBuilder data = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.isEmpty()) {
+                if (eventName != null || data.length() > 0) {
+                    return new SseEvent(eventName == null ? "(无 event 名)" : eventName, data.toString());
+                }
+            } else if (line.startsWith("event:")) {
+                eventName = line.substring("event:".length()).trim();
+            } else if (line.startsWith("data:")) {
+                if (data.length() > 0) {
+                    data.append('\n');
+                }
+                data.append(line.substring("data:".length()).trim());
+            }
+            // id: / retry: / 注释行忽略
+        }
+        return (eventName != null || data.length() > 0)
+                ? new SseEvent(eventName == null ? "(无 event 名)" : eventName, data.toString())
+                : null;
+    }
+
+    /**
+     * 按问题文本轮询最新轮次（取到即返回，status 为取消路径落库）。
+     *
+     * @param timeout 轮询上限（取消检测与收尾是异步的，秒级延迟属正常）
+     * @throws AssertionError 超时未见落库时抛出（带问题文本便于定位）
+     */
+    private ChatTurn awaitTurnByQuestion(String question, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        ChatTurn turn = null;
+        while (System.nanoTime() < deadline) {
+            turn = chatTurnMapper.selectOne(new LambdaQueryWrapper<ChatTurn>()
+                    .eq(ChatTurn::getQuestion, question)
+                    .orderByDesc(ChatTurn::getId)
+                    .last("LIMIT 1"));
+            if (turn != null && turn.getStatus() != null) {
+                return turn;
+            }
+            Thread.sleep(500);
+        }
+        assertNotNull(turn, "轮询超时：断线的轮次未落库，question=" + question);
+        return turn;
     }
 
     /** 测试内注册的登录会话：用户名 + token（token 只在进程内传递，不落盘、不进报告）。 */

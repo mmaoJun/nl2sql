@@ -28,6 +28,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import reactor.core.publisher.SignalType;
 
 /**
  * 聊天服务：把默认装配的 {@link ReActAgent} 暴露为“提问 → 采集 → {@link ChatResult}”。
@@ -48,10 +51,11 @@ import java.util.UUID;
  * 最近 {@code nl2sql.memory.context-turns} 轮的「用户问 + 助手答」消息对
  * （T23 起<b>不按数据源过滤</b>，供跨源融合追问；每轮问题携带其自身的数据源 ID）
  * + 当前包装问题，交给 {@code agent.streamEvents(List<Msg>, ctx)}。
- * 每轮问答（成功 / 失败 / 空回答）都往 {@code chat_turns} 落一行并推进会话活跃时间。
+ * 每轮问答（成功 / 失败 / 空回答 / <b>客户端取消（T25）</b>）都往 {@code chat_turns}
+ * 落一行并推进会话活跃时间。
  *
- * <p><b>审计</b>：每次问答（成功与异常终止）各落一条 {@code audit_logs} 记录，
- * 携带会话与轮次归因（{@code session_id}/{@code turn_id}）。
+ * <p><b>审计</b>：每次问答（成功 / 异常终止 / 客户端取消）各落一条 {@code audit_logs}
+ * 记录，携带会话与轮次归因（{@code session_id}/{@code turn_id}）。
  * 用户身份、模型与历史都在问答发起时（请求线程）解析——SSE 通道的订阅发生在请求线程之后，
  * 届时 {@code SecurityContextHolder} 的 ThreadLocal 已不可靠。
  *
@@ -70,6 +74,13 @@ public class ChatService {
 
     /** 提取 SQL / 行数的工具名（与 {@link AgentEventCollector} 同口径） */
     private static final String EXECUTE_SQL_TOOL = "execute_sql";
+
+    /**
+     * 取消路径的失败原因（写入 {@code chat_turns.error_message} 与审计 {@code error_message}）。
+     *
+     * <p>与异常路径的翻译消息区分：这是客户端行为，不是模型 / 引擎故障。
+     */
+    private static final String CANCELLED_NOTE = "客户端取消或连接中断（SSE 订阅被取消，本轮未正常收尾）";
 
     /** {@code chat_turns.error_message} 列宽（VARCHAR(500)），超长截断避免落库失败 */
     private static final int ERROR_MESSAGE_MAX_LENGTH = 500;
@@ -169,6 +180,11 @@ public class ChatService {
      * <p>会话/轮次与审计都在 FINAL 事件发出<b>之前</b>落库（同线程、先落库后发事件），
      * 因此客户端收到 FINAL 时 {@code chat_turns} 已可查。
      *
+     * <p><b>取消路径（T25）</b>：客户端中途断开（Flux unsubscribe / 连接关闭）不经过
+     * {@code onErrorResume}，此前会丢掉整轮记录。现在由 {@code doFinally(CANCEL)} 兜底，
+     * 同样落一条轮次 + 一条审计（{@link TurnState#TURN_CANCELLED}）；三条路径
+     * （成功 / 失败 / 取消）经原子标记<b>先到先落、只落一次</b>。
+     *
      * @param datasourceId    数据源 ID
      * @param question        用户问题（自动包装“数据源ID为 N。”前缀）
      * @param sessionIdOrNull 会话 ID，可空；非空时校验归属并注入历史，为空时自动新建会话
@@ -186,10 +202,15 @@ public class ChatService {
 
         long startNanos = System.nanoTime();
         AgentEventCollector collector = new AgentEventCollector(startNanos);
+        // 成功 / 失败 / 取消三条路径共享：先到先落，保证一轮只落一条轮次 + 一条审计
+        AtomicBoolean settled = new AtomicBoolean(false);
 
         return nl2sqlAgent.streamEvents(messages, buildContext())
                 .concatMap(event -> Flux.fromIterable(collector.accept(event)))
                 .concatWith(Flux.defer(() -> {
+                    if (!settled.compareAndSet(false, true)) {
+                        return Flux.empty();
+                    }
                     // FINAL 生成即本轮成功收尾：轮次与审计先落库再发事件（失败不阻塞回答）
                     ChatResult result = collectResult(collector, model, startNanos);
                     result.setSessionId(sessionId);
@@ -203,15 +224,49 @@ public class ChatService {
                 }))
                 .onErrorResume(e -> {
                     BusinessException translated = translateFailure("流式问答中断", e);
-                    long elapsedMs = elapsedMs(startNanos);
-                    Long turnId = recordTurn(new TurnRecord(sessionId, question, datasourceId, model, provider,
-                            collector.lastRequestedSql(), null, elapsedMs, TurnState.TURN_FAILED,
-                            translated.getMessage(), null));
-                    auditTurn(userId, datasourceId, question, sessionId, turnId, collector, model, provider,
-                            null, translated.getMessage(), elapsedMs);
+                    // 取消与异常竞争时只由先到者落库；此处 CAS 失败说明取消路径已收尾
+                    if (settled.compareAndSet(false, true)) {
+                        long elapsedMs = elapsedMs(startNanos);
+                        Long turnId = recordTurn(new TurnRecord(sessionId, question, datasourceId, model, provider,
+                                collector.lastRequestedSql(), null, elapsedMs, TurnState.TURN_FAILED,
+                                translated.getMessage(), null));
+                        auditTurn(userId, datasourceId, question, sessionId, turnId, collector, model, provider,
+                                null, translated.getMessage(), elapsedMs);
+                    }
                     return Flux.just(new ChatStreamEvent(ChatStreamEvent.EVENT_ERROR,
                             new ErrorPayload(translated.getCode(), translated.getMessage())));
+                })
+                .doFinally(signal -> {
+                    // 客户端断开：DO_FINALLY 信号为 CANCEL（成功/失败路径在此前已 settle）
+                    if (signal == SignalType.CANCEL && settled.compareAndSet(false, true)) {
+                        recordCancelledTurn(userId, datasourceId, question, sessionId, collector, model,
+                                provider, startNanos);
+                    }
                 });
+    }
+
+    /**
+     * 客户端取消 / 连接中断的收尾（T25）：与成功 / 失败路径同一审计口径，
+     * 落一条 {@code cancelled} 轮次 + 一条审计，避免轮次丢失与审计缺失。
+     *
+     * <p>字段口径：{@code generatedSql} 取本轮最后一次 execute_sql 的入参 SQL（不限成功，
+     * 同失败路径）；{@code rowCount} 为 null（未完成的结果不写脏值）；
+     * {@code answer} 取已拼出的部分回答（一字未流出时为 null，按列可空约束执行）。
+     *
+     * @param startNanos 本轮发起时刻（耗时口径与成功 / 失败路径一致）
+     */
+    private void recordCancelledTurn(Long userId, Long datasourceId, String question, Long sessionId,
+                                     AgentEventCollector collector, String model, String provider,
+                                     long startNanos) {
+        long elapsedMs = elapsedMs(startNanos);
+        String answer = collector.answerSoFar();
+        log.warn("[chat] 流式问答被客户端取消（连接关闭 / 订阅中断）: sessionId={} datasourceId={} elapsedMs={}",
+                sessionId, datasourceId, elapsedMs);
+        Long turnId = recordTurn(new TurnRecord(sessionId, question, datasourceId, model, provider,
+                collector.lastRequestedSql(), null, elapsedMs, TurnState.TURN_CANCELLED, CANCELLED_NOTE,
+                isBlank(answer) ? null : answer));
+        auditTurn(userId, datasourceId, question, sessionId, turnId, collector, model, provider,
+                null, CANCELLED_NOTE, elapsedMs);
     }
 
     /** 包装问题：满足工具与提示词的“数据源ID为 N”约定。 */

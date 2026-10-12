@@ -221,6 +221,19 @@ public final class AgentEventCollector {
         return (firstEventNanos - startNanos) / 1_000_000;
     }
 
+    /**
+     * 已拼出的回答文本（AgentResultEvent 正文；缺失时回退为正文增量缓冲），可能为空串。
+     *
+     * <p>取消路径（T25）落库用：连接中断时 AgentResultEvent 可能尚未到达，
+     * 这里取正文增量缓冲里的部分内容。不参与 trace / sql / rows 汇总，
+     * 不改变 {@link #toResult} 的既有口径。
+     *
+     * @return 已拼出的回答文本；一字未流出时为空串
+     */
+    public String answerSoFar() {
+        return answerText();
+    }
+
     /** 最终回答：优先 AgentResultEvent 正文，缺失时回退为正文增量拼接。 */
     private String answerText() {
         if (answer != null && !answer.isBlank()) {
