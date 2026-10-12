@@ -23,7 +23,8 @@
       </button>
     </div>
     <div class="input-hint">
-      <span v-if="disabled && !inputText.trim()">请先选择数据源</span>
+      <span v-if="loading">正在生成回答，请稍候...</span>
+      <span v-else-if="disabled && !inputText.trim()">请先选择数据源</span>
       <span v-else>Enter 发送 · Shift+Enter 换行</span>
     </div>
   </div>
@@ -33,7 +34,10 @@
 import { ref } from 'vue'
 
 const props = defineProps({
-  disabled: Boolean
+  disabled: Boolean,
+  // 与 disabled 分开（disabled 还包含"未选数据源"）：加载中要提示的是"生成中"，
+  // 不然流式回答期间底部提示会错报成"请先选择数据源"（T12 实测发现）
+  loading: Boolean
 })
 
 const emit = defineEmits(['send'])
