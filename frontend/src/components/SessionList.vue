@@ -508,9 +508,9 @@ async function onRemove(session) {
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 7px;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-secondary);
   font-size: 12.5px;
   cursor: pointer;
@@ -520,7 +520,6 @@ async function onRemove(session) {
 
 .logout-btn:hover {
   color: var(--error);
-  border-color: var(--error);
   background: var(--error-bg);
 }
 
