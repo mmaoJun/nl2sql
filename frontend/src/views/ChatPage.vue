@@ -339,7 +339,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 17vh 32px 40px;
+  /* 输入框落在页面中间偏上的位置（30vh + 标题高度后约 35%~42%） */
+  padding: 30vh 32px 40px;
 }
 
 .welcome-title {
