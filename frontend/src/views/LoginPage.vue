@@ -642,6 +642,17 @@ async function handleSubmit() {
   box-shadow: 0 0 0 1.5px var(--primary) inset;
 }
 
+/* Chrome 自动填充会给输入框刷一层淡蓝底（:-webkit-autofill），
+   这个底色用 background-color 覆盖不掉，只能用超大 inset 阴影盖住，
+   同时把 autofill 强制的文字色改回主题色 */
+.auth-form :deep(.el-input__inner:-webkit-autofill),
+.auth-form :deep(.el-input__inner:-webkit-autofill:hover),
+.auth-form :deep(.el-input__inner:-webkit-autofill:focus) {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+}
+
 .submit {
   width: 100%;
   --el-button-size: 46px;
