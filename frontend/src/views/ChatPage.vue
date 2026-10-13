@@ -11,7 +11,11 @@
       @remove="handleRemoveSession"
     />
 
-    <div class="chat-main">
+    <div v-if="isManageView" class="manage-pane">
+      <DataSourcePage />
+    </div>
+
+    <div v-else class="chat-main">
     <div v-if="loadError" class="load-error">
       <span>历史消息加载失败</span>
       <button class="retry-btn" @click="reloadAfterFailure">重试</button>
@@ -109,6 +113,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -118,10 +123,15 @@ import ResultTable from '../components/ResultTable.vue'
 import TracePanel from '../components/TracePanel.vue'
 import SessionList from '../components/SessionList.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
+import DataSourcePage from './DataSourcePage.vue'
 
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
 const sessionStore = useSessionStore()
+const route = useRoute()
+const router = useRouter()
+// /datasources 复用本外壳：右侧换成数据源管理，左侧会话栏常驻
+const isManageView = computed(() => route.path.startsWith('/datasources'))
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
@@ -153,9 +163,11 @@ function handleCreateSession() {
   chatStore.clearMessages()
   loadError.value = false
   selectedDsId.value = null
+  if (isManageView.value) router.push('/chat')
 }
 
 async function handleSelectSession(id) {
+  if (isManageView.value) router.push('/chat')
   if (id === sessionStore.currentSessionId) return
   sessionStore.setCurrent(id)
   await restoreSession(id)
@@ -285,6 +297,15 @@ onMounted(async () => {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  background: var(--surface);
+}
+
+/* 数据源管理页在右侧面板内渲染（左侧会话栏常驻） */
+.manage-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
   background: var(--surface);
 }
 

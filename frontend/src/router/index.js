@@ -11,9 +11,11 @@ const routes = [
     component: () => import('../views/ChatPage.vue')
   },
   {
+    // 侧栏常驻：数据源管理复用同一外壳（ChatPage 内按路由切换右侧内容），
+    // 这样管理页也带着左侧会话/导航栏，而不是整页替换
     path: '/datasources',
     name: 'DataSources',
-    component: () => import('../views/DataSourcePage.vue')
+    component: () => import('../views/ChatPage.vue')
   },
   {
     // 原「设置」页内容就是数据源管理，独立成 /datasources 后旧地址重定向兜底

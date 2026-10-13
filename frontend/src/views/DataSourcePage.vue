@@ -1,70 +1,89 @@
 <template>
   <div class="ds-page">
     <div class="page-header">
-      <div class="header-left">
-        <button class="back-btn" @click="router.push('/chat')">
-          <el-icon :size="16"><ArrowLeft /></el-icon>
-          <span>返回对话</span>
+      <div>
+        <h2 class="page-title">数据源</h2>
+        <p class="page-desc">在这里查看和管理您的数据源</p>
+      </div>
+      <el-dropdown trigger="click" @command="openCreateByCode">
+        <button class="btn-primary">
+          <el-icon :size="14"><Plus /></el-icon>
+          <span>添加数据源</span>
         </button>
-        <div>
-          <h2 class="page-title">数据源管理</h2>
-          <p class="page-desc">按引擎类型配置连接，每种类型一个连接即可在对话中选用</p>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="t in typeOptions" :key="t.code" :command="t.code">
+              {{ t.displayName }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
+
+    <div class="filter-row">
+      <div class="filter-input">
+        <el-icon :size="15"><Search /></el-icon>
+        <input v-model="keyword" class="filter-ipt" placeholder="按名称过滤..." />
+      </div>
+      <span class="filter-count">共 {{ dataSources.length }} 个数据源</span>
+    </div>
+
+    <div v-if="filtered.length" class="ds-grid">
+      <div v-for="ds in filtered" :key="ds.id" class="ds-card">
+        <div class="card-head">
+          <span class="type-icon" :style="{ background: typeColor(ds.type) }">
+            {{ (ds.type || '?').charAt(0).toUpperCase() }}
+          </span>
+          <span class="card-name">{{ ds.name }}</span>
+          <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
+          <el-tooltip v-if="testedOk.has(ds.id)" content="最近一次测试连接成功" placement="top" :show-after="80">
+            <el-icon :size="16" class="card-check"><CircleCheck /></el-icon>
+          </el-tooltip>
+        </div>
+
+        <p class="card-desc">{{ describe(ds) }}</p>
+
+        <div class="card-footer">
+          <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
+          <div class="card-actions">
+            <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click="handleTest(ds.id)">
+              <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
+            </button>
+            <button class="icon-btn" title="编辑" @click="openEdit(ds)">
+              <el-icon :size="14"><EditPen /></el-icon>
+            </button>
+            <button class="icon-btn danger" title="删除" @click="handleDelete(ds)">
+              <el-icon :size="14"><Delete /></el-icon>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="type-grid">
-      <div v-for="t in typeCards" :key="t.code" class="type-card" :class="{ configured: t.records.length > 0 }">
-        <div class="card-head">
-          <span class="type-icon" :style="{ background: typeColor(t.code) }">
-            {{ t.displayName.charAt(0) }}
-          </span>
-          <div class="card-title">
-            <span class="card-name">{{ t.displayName }}</span>
-            <span class="card-code">{{ t.code }}</span>
-          </div>
-          <span class="card-status" :class="{ on: t.records.length > 0 }">
-            {{ t.records.length > 0 ? '已配置' : '未配置' }}
-          </span>
-        </div>
-
-        <div v-if="t.records.length === 0" class="card-empty">
-          <span>还没有配置该类型的连接</span>
-          <button class="btn-primary sm" @click="openCreate(t)">配置连接</button>
-        </div>
-
-        <div v-else class="card-records">
-          <div v-for="r in t.records" :key="r.id" class="record-row">
-            <div class="record-info">
-              <span class="record-target">{{ r.host }}:{{ r.port }}</span>
-              <span v-if="r.databaseName" class="record-db">{{ r.databaseName }}</span>
-            </div>
-            <div class="record-actions">
-              <button class="icon-btn" title="测试连接" :disabled="testingId === r.id" @click="handleTest(r.id)">
-                <el-icon :size="14"><Loading v-if="testingId === r.id" /><Connection v-else /></el-icon>
-              </button>
-              <button class="icon-btn" title="编辑" @click="openEdit(t, r)">
-                <el-icon :size="14"><EditPen /></el-icon>
-              </button>
-              <button class="icon-btn danger" title="删除" @click="handleDelete(r)">
-                <el-icon :size="14"><Delete /></el-icon>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div v-else class="ds-empty">
+      <p class="empty-text">
+        {{ keyword.trim() ? '没有匹配的数据源' : '还没有数据源，先添加一个吧' }}
+      </p>
+      <button v-if="!keyword.trim()" class="btn-primary sm" @click="openCreateByCode(typeOptions[0].code)">
+        <el-icon :size="14"><Plus /></el-icon>
+        <span>添加数据源</span>
+      </button>
     </div>
 
     <Teleport to="body">
       <div v-if="showDialog" class="dialog-overlay" @click.self="closeDialog">
         <div class="dialog-card">
           <div class="dialog-header">
-            <h3>{{ editingId ? `编辑 ${dialogType.displayName} 连接` : `配置 ${dialogType.displayName} 连接` }}</h3>
+            <h3>{{ editingId ? `编辑 ${dialogType.displayName} 数据源` : `添加 ${dialogType.displayName} 数据源` }}</h3>
             <button class="dialog-close" @click="closeDialog">
               <el-icon :size="18"><Close /></el-icon>
             </button>
           </div>
           <div class="dialog-body">
+            <div class="form-group">
+              <label class="form-label">名称</label>
+              <input v-model="form.name" class="form-input" placeholder="数据源名称" />
+            </div>
             <div class="form-row">
               <div class="form-group flex-2">
                 <label class="form-label">主机</label>
@@ -115,21 +134,24 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, EditPen, Delete, Connection, Loading, Close } from '@element-plus/icons-vue'
+import {
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck
+} from '@element-plus/icons-vue'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { createDataSource, updateDataSource, deleteDataSource, testDataSource } from '../api/endpoints'
 
-const router = useRouter()
 const dsStore = useDataSourceStore()
 
 const showDialog = ref(false)
 const creating = ref(false)
 const testingId = ref(null)
-/** 当前编辑的数据源 id；为空表示新增模式（新增/编辑共用同一个对话框） */
+const keyword = ref('')
+/** 最近一次测试连接成功的 id（仅页面内存态，不落库、刷新即清） */
+const testedOk = ref(new Set())
+/** 当前编辑的数据源 id；为空表示新增模式（新增/编辑共用一个对话框） */
 const editingId = ref(null)
-/** 对话框绑定的引擎类型（类型制：由卡片决定，表单内不再切换类型） */
+/** 对话框绑定的引擎类型（由「添加数据源」下拉决定，表单内不切换类型） */
 const dialogType = ref({ code: 'mysql', displayName: 'MySQL', defaultPort: 3306 })
 
 const form = reactive({
@@ -152,28 +174,26 @@ const TYPE_COLORS = {
   graphql: '#9ca0a3'
 }
 
-function typeColor(code) {
-  return TYPE_COLORS[code] || '#64748b'
-}
+// supported-types 拉取失败时的兜底清单（与后端注册的六类一致）
+const FALLBACK_TYPES = [
+  { code: 'mysql', displayName: 'MySQL', defaultPort: 3306 },
+  { code: 'postgresql', displayName: 'PostgreSQL', defaultPort: 5432 },
+  { code: 'hive', displayName: 'Hive', defaultPort: 10000 },
+  { code: 'hdfs', displayName: 'HDFS', defaultPort: 9870 },
+  { code: 'rest', displayName: 'REST API', defaultPort: 80 },
+  { code: 'graphql', displayName: 'GraphQL', defaultPort: 80 }
+]
 
-// supported-types 拉取失败时回退：已有数据源类型 + MySQL，保证页面可编辑
-const supportedTypes = computed(() =>
-  dsStore.supportedTypes.length
-    ? dsStore.supportedTypes
-    : [...new Set(dsStore.dataSources.map((d) => d.type)), 'mysql']
-        .filter((v, i, arr) => arr.indexOf(v) === i)
-        .map((code) => ({ code, displayName: code.toUpperCase(), defaultPort: null }))
-)
+const typeOptions = computed(() => (dsStore.supportedTypes.length ? dsStore.supportedTypes : FALLBACK_TYPES))
+const dataSources = computed(() => dsStore.dataSources)
 
-const typeCards = computed(() =>
-  supportedTypes.value.map((t) => ({
-    ...t,
-    records: dsStore.dataSources.filter((d) => d.type === t.code)
-  }))
-)
+const filtered = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return dataSources.value
+  return dataSources.value.filter((ds) => `${ds.name || ''} ${ds.type || ''}`.toLowerCase().includes(kw))
+})
 
 const isApiType = computed(() => dialogType.value.code === 'rest' || dialogType.value.code === 'graphql')
-
 const DEFAULT_USERNAMES = { mysql: 'root', postgresql: 'postgres' }
 const defaultUsername = computed(() => DEFAULT_USERNAMES[dialogType.value.code] || '')
 
@@ -187,11 +207,39 @@ const extraConfigError = computed(() => {
   }
 })
 
-function openCreate(t) {
+function typeColor(code) {
+  return TYPE_COLORS[code] || '#64748b'
+}
+
+/** 卡片副文案：当前没有采集库/表统计，用连接目标替代"描述" */
+function describe(ds) {
+  const target = `${ds.host || '-'}:${ds.port || '-'}`
+  return ds.databaseName ? `${target} · ${ds.databaseName}` : target
+}
+
+function isApiTypeCode(code) {
+  return code === 'rest' || code === 'graphql'
+}
+
+// 后端时间字段两种形态（单条带小数秒 / 列表 ISO-8601），清洗后统一算相对时间
+function relativeTime(value) {
+  if (!value) return ''
+  const normalized = String(value).split('.')[0].replace('T', ' ').replace(/-/g, '/')
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return ''
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `大约 ${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `大约 ${hours} 小时前`
+  return `大约 ${Math.floor(hours / 24)} 天前`
+}
+
+function openCreateByCode(code) {
+  const t = typeOptions.value.find((item) => item.code === code) || FALLBACK_TYPES[0]
   editingId.value = null
   dialogType.value = t
   Object.assign(form, {
-    // 类型制命名：新建连接名固定为「{类型}数据源」，用户不再给实例起名
     name: `${t.displayName}数据源`,
     host: 'localhost',
     port: t.defaultPort || 3306,
@@ -203,15 +251,12 @@ function openCreate(t) {
   showDialog.value = true
 }
 
-function isApiTypeCode(code) {
-  return code === 'rest' || code === 'graphql'
-}
-
-function openEdit(t, row) {
+function openEdit(row) {
   editingId.value = row.id
-  dialogType.value = t
+  dialogType.value = typeOptions.value.find((t) => t.code === row.type)
+    || { code: row.type, displayName: (row.type || '').toUpperCase(), defaultPort: row.port }
   Object.assign(form, {
-    // 编辑保留原连接名（含历史数据里的演示名），不按类型重命名
+    // 编辑保留原名称（含历史数据里的演示名）
     name: row.name,
     host: row.host,
     port: row.port,
@@ -243,8 +288,8 @@ function buildPayload() {
 }
 
 async function handleSubmit() {
-  if (!form.host.trim()) {
-    ElMessage.warning('请填写主机')
+  if (!form.name.trim() || !form.host.trim()) {
+    ElMessage.warning('请填写名称与主机')
     return
   }
   creating.value = true
@@ -252,10 +297,10 @@ async function handleSubmit() {
     const payload = buildPayload()
     if (editingId.value) {
       await updateDataSource(editingId.value, payload)
-      ElMessage.success('连接已更新')
+      ElMessage.success('数据源已更新')
     } else {
       await createDataSource(payload)
-      ElMessage.success('连接已创建')
+      ElMessage.success('数据源创建成功')
     }
     closeDialog()
     await dsStore.fetchDataSources()
@@ -271,6 +316,7 @@ async function handleTest(id) {
   try {
     const res = await testDataSource(id)
     if (res.data) {
+      testedOk.value = new Set(testedOk.value).add(id)
       ElMessage.success('连接成功')
     } else {
       ElMessage.error('连接失败')
@@ -285,8 +331,8 @@ async function handleTest(id) {
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(
-      `删除 ${row.host}:${row.port} 的连接？对话中将无法再选用该类型数据源。`,
-      '删除连接',
+      `删除「${row.name}」？对话中将无法再选用该数据源。`,
+      '删除数据源',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
   } catch {
@@ -309,7 +355,7 @@ onMounted(() => {
 
 <style scoped>
 .ds-page {
-  padding: 32px;
+  padding: 28px 32px 40px;
   height: 100%;
   overflow-y: auto;
 }
@@ -318,73 +364,85 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 28px;
-}
-
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.back-btn:hover {
-  color: var(--primary);
-  border-color: var(--primary-light);
-  background: var(--primary-bg);
+  margin-bottom: 18px;
 }
 
 .page-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 4px;
 }
 
 .page-desc {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
-/* ---- 类型卡片 ---- */
-.type-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+/* ---- 过滤 ---- */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.type-card {
+.filter-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 320px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   background: var(--surface);
+  color: var(--text-muted);
+  transition: box-shadow var(--transition);
+}
+
+.filter-input:focus-within {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.filter-ipt {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.filter-ipt::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-count {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---- 卡片 ---- */
+.ds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.ds-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 18px;
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  background: var(--surface);
+  padding: 16px 18px 12px;
   transition: all var(--transition);
 }
 
-.type-card.configured {
-  border-color: var(--border);
-}
-
-.type-card:hover {
-  box-shadow: var(--shadow);
+.ds-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
 }
 
 .card-head {
@@ -396,103 +454,72 @@ onMounted(() => {
 .type-icon {
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 9px;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   flex-shrink: 0;
 }
 
-.card-title {
+.card-name {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.card-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-}
-
-.card-code {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.card-status {
-  font-size: 11.5px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.card-status.on {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.card-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 0 4px;
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-
-.card-records {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.record-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: var(--surface-hover);
-}
-
-.record-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.record-target {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.record-db {
-  font-size: 12px;
-  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.record-actions {
+.type-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.card-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.card-desc {
+  margin: 10px 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  min-height: 21px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+.card-meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.card-actions {
   display: flex;
   gap: 2px;
-  flex-shrink: 0;
 }
 
 .icon-btn {
@@ -522,21 +549,35 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+/* ---- 空态 ---- */
+.ds-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 80px 0;
+}
+
+.empty-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 /* ---- 按钮 ---- */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 20px;
+  padding: 9px 16px;
   background: var(--primary);
   color: #fff;
   border: none;
   border-radius: var(--radius);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 .btn-primary.sm {
@@ -546,7 +587,7 @@ onMounted(() => {
 
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-dark);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
 }
 
 .btn-primary:disabled {
@@ -570,7 +611,7 @@ onMounted(() => {
   border-color: #cbd5e1;
 }
 
-/* ---- Dialog（沿用原设置页样式） ---- */
+/* ---- Dialog ---- */
 .dialog-overlay {
   position: fixed;
   inset: 0;

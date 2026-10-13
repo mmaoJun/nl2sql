@@ -44,7 +44,7 @@
         <span>新对话</span>
       </button>
 
-      <button class="sidebar-nav-btn" @click="goDatasources">
+      <button class="sidebar-nav-btn" :class="{ active: isManageView }" @click="goDatasources">
         <el-icon :size="15"><Coin /></el-icon>
         <span>数据源管理</span>
       </button>
@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Plus, EditPen, Delete, SwitchButton, Expand, Fold, Coin } from '@element-plus/icons-vue'
@@ -109,6 +109,8 @@ defineProps({
 const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:collapsed'])
 
 const username = ref('')
+// 当前是否在数据源管理页（导航项高亮用）
+const isManageView = computed(() => router.currentRoute.value.path.startsWith('/datasources'))
 watch(() => router.currentRoute.value.path, () => {
   username.value = localStorage.getItem('username') || ''
 }, { immediate: true })
@@ -345,6 +347,13 @@ async function onRemove(session) {
 .sidebar-nav-btn:hover {
   background: var(--bg);
   color: var(--text);
+}
+
+.sidebar-nav-btn.active,
+.sidebar-nav-btn.active:hover {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
 }
 
 .session-section-title {
