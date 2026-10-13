@@ -1,10 +1,48 @@
 <template>
-  <div class="session-list">
-    <!-- 顶部：数据源管理入口（数据源选择已移到对话输入框下方，由 ChatPage 承载） -->
+  <!-- 收起态：窄栏只留数据源 / 新对话 / 用户头像三个入口（参照截图二） -->
+  <div v-if="collapsed" class="session-list collapsed">
+    <div class="rail-top">
+      <button class="rail-btn" title="数据源" @click="$emit('update:collapsed', false)">
+        <el-icon :size="17"><Coin /></el-icon>
+      </button>
+      <button class="rail-btn" title="新对话" @click="$emit('create')">
+        <el-icon :size="17"><Plus /></el-icon>
+      </button>
+    </div>
+    <div class="rail-footer">
+      <button
+        class="rail-avatar"
+        :title="username || '未登录'"
+        @click="$emit('update:collapsed', false)"
+      >
+        {{ username.charAt(0).toUpperCase() || '?' }}
+      </button>
+    </div>
+  </div>
+
+  <div v-else class="session-list">
+    <div class="sidebar-header">
+      <div class="brand">
+        <span class="brand-logo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </span>
+        <span class="brand-name">NL2SQL</span>
+      </div>
+      <button class="collapse-btn" title="收起侧栏" @click="$emit('update:collapsed', true)">
+        <el-icon :size="16"><Fold /></el-icon>
+      </button>
+    </div>
+
+    <!-- 顶部：数据源选择（类型制）+ 管理页齿轮，开新对话前在这里选源 -->
     <div class="sidebar-top">
-      <button class="ds-manage-btn" @click="goDatasources">
-        <el-icon :size="15"><Coin /></el-icon>
-        <span>数据源管理</span>
+      <DataSourceSelector
+        :model-value="dsId"
+        :data-sources="dataSources"
+        :supported-types="supportedTypes"
+        @update:model-value="$emit('update:dsId', $event)"
+      />
+      <button class="gear-btn" title="数据源管理" @click="goDatasources">
+        <el-icon :size="16"><Setting /></el-icon>
       </button>
     </div>
 
@@ -59,17 +97,22 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, EditPen, Delete, SwitchButton, Coin } from '@element-plus/icons-vue'
+import { Plus, EditPen, Delete, Setting, SwitchButton, Coin, Fold } from '@element-plus/icons-vue'
+import DataSourceSelector from './DataSourceSelector.vue'
 
 const router = useRouter()
 
 defineProps({
   sessions: { type: Array, default: () => [] },
   currentId: { type: Number, default: null },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  collapsed: { type: Boolean, default: false },
+  dsId: { type: [Number, null], default: null },
+  dataSources: { type: Array, default: () => [] },
+  supportedTypes: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['create', 'select', 'rename', 'remove'])
+const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:dsId', 'update:collapsed'])
 
 const username = ref('')
 watch(() => router.currentRoute.value.path, () => {
@@ -149,32 +192,144 @@ async function onRemove(session) {
   min-height: 0;
 }
 
-/* ---- 顶部：数据源管理入口（全宽） ---- */
-.sidebar-top {
-  padding: 12px 12px 2px;
-  flex-shrink: 0;
+/* ---- 收起态窄栏 ---- */
+.session-list.collapsed {
+  width: 56px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
 }
 
-.ds-manage-btn {
+.rail-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.rail-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 0 12px;
-  height: 36px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 13px;
+  justify-content: center;
   cursor: pointer;
   transition: all var(--transition);
 }
 
-.ds-manage-btn:hover {
-  border-color: var(--primary-light);
-  background: var(--primary-bg);
-  color: var(--primary);
+.rail-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.rail-avatar {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.rail-avatar:hover {
+  background: var(--primary-dark);
+}
+
+/* ---- 展开态 ---- */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.collapse-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: all var(--transition);
+}
+
+.collapse-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---- 顶部：数据源选择 + 管理齿轮 ---- */
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px 6px;
+  flex-shrink: 0;
+}
+
+.sidebar-top .ds-selector {
+  flex: 1;
+  min-width: 0;
+}
+
+.gear-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.gear-btn:hover {
+  background: var(--bg);
+  color: var(--text);
 }
 
 /* ---- 中部：新对话 + 最近对话 ---- */
@@ -182,7 +337,7 @@ async function onRemove(session) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 8px 0;
+  margin: 4px 8px 0;
   padding: 0 10px;
   height: 36px;
   flex-shrink: 0;
@@ -196,8 +351,8 @@ async function onRemove(session) {
 }
 
 .new-session-btn:hover {
-  background: var(--primary-bg);
-  color: var(--primary);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .session-section-title {
@@ -240,11 +395,12 @@ async function onRemove(session) {
 
 .session-item.active,
 .session-item.active:hover {
-  background: var(--primary-bg);
+  background: var(--bg);
 }
 
 .session-item.active .session-title {
-  color: var(--primary);
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* 悬浮操作占住右上角，此时把同位置的 meta 小灰字藏掉避免叠字 */
@@ -329,13 +485,13 @@ async function onRemove(session) {
   color: var(--error);
 }
 
-/* ---- 底部：登录信息 + 设置 / 退出 ---- */
+/* ---- 底部：登录信息 + 退出 ---- */
 .session-footer {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   flex-shrink: 0;
 }
 
@@ -343,11 +499,11 @@ async function onRemove(session) {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  background: var(--primary);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
@@ -387,7 +543,10 @@ async function onRemove(session) {
 
 /* 键盘可达性：新的按钮保持一致的 focus 视觉 */
 .new-session-btn:focus-visible,
-.ds-manage-btn:focus-visible,
+.gear-btn:focus-visible,
+.collapse-btn:focus-visible,
+.rail-btn:focus-visible,
+.rail-avatar:focus-visible,
 .logout-btn:focus-visible {
   outline: 2px solid var(--primary-light);
   outline-offset: 1px;

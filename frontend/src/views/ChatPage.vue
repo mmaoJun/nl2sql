@@ -1,9 +1,13 @@
 <template>
   <div class="chat-page">
     <SessionList
+      v-model:dsId="selectedDsId"
+      v-model:collapsed="sidebarCollapsed"
       :sessions="sessionStore.sessions"
       :current-id="sessionStore.currentSessionId"
       :loading="sessionStore.loading"
+      :data-sources="dsStore.dataSources"
+      :supported-types="dsStore.supportedTypes"
       @create="handleCreateSession"
       @select="handleSelectSession"
       @rename="handleRenameSession"
@@ -24,6 +28,8 @@
 
     <div class="chat-body">
       <div class="chat-messages" ref="messagesRef">
+        <!-- 消息列与输入框同宽（900px 居中），无头像直排（参照黑白灰改版截图） -->
+        <div class="chat-column">
         <!-- 首屏/切会话的轻量骨架屏（el-skeleton，避免长时间空白） -->
         <div v-if="restoring" class="chat-skeleton">
           <el-skeleton :rows="3" animated />
@@ -39,7 +45,7 @@
               </svg>
             </div>
             <h3 class="empty-title">开始对话</h3>
-            <p class="empty-desc">输入自然语言问题，自动生成 SQL 并查询结果</p>
+            <p class="empty-desc">先在左侧选择数据源，再输入自然语言问题，自动生成 SQL 并查询结果</p>
             <div class="example-queries">
               <button
                 v-for="q in exampleQueries"
@@ -65,6 +71,7 @@
             <span class="loading-text">正在分析并生成 SQL...</span>
           </div>
         </template>
+        </div>
       </div>
     </div>
 
@@ -75,18 +82,15 @@
         @send="handleSend"
         @stop="handleStop"
       >
-        <!-- 数据源选择放在输入框正下方（原侧栏顶部位置已让给「数据源管理」入口）；
-             类型制选择：下拉列引擎类型，选中即用该类型已配置的连接 -->
-        <template #below-input>
-          <div class="ds-picker">
+        <!-- 对话开始后输入框左下显示当前数据源 chip（可点击切换类型）；
+             开新对话前的选择入口在侧栏顶部 -->
+        <template v-if="chatStore.messages.length > 0" #footer-left>
+          <div class="ds-chip">
             <DataSourceSelector
               v-model="selectedDsId"
               :data-sources="dsStore.dataSources"
               :supported-types="dsStore.supportedTypes"
             />
-            <button class="ds-manage-link" title="数据源管理" @click="router.push('/datasources')">
-              <el-icon :size="15"><Setting /></el-icon>
-            </button>
           </div>
         </template>
       </ChatInput>
@@ -101,8 +105,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Grid, Setting } from '@element-plus/icons-vue'
+import { Grid } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -117,13 +120,17 @@ import DataSourceSelector from '../components/DataSourceSelector.vue'
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
 const sessionStore = useSessionStore()
-const router = useRouter()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
 const schemaVisible = ref(false)
 // 首屏 / 切会话的历史加载中（骨架屏），与 chatStore.loading（生成中）分开
 const restoring = ref(false)
+// 侧栏收起态持久化：窄栏只看数据源 / 新对话 / 用户头像
+const sidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') === '1')
+watch(sidebarCollapsed, (value) => {
+  localStorage.setItem('sidebar-collapsed', value ? '1' : '0')
+})
 
 const exampleQueries = [
   '查询所有用户',
@@ -268,22 +275,24 @@ onMounted(async () => {
 }
 
 /* 纵向布局搬到了这一层：.chat-page 改成横向之后，header/body/input 得有个容器继续竖排。
-   min-width:0 是解除 flex 子项"最小宽度等于内容宽度"的默认值，不加的话长 SQL 会把列表挤没 */
+   min-width:0 是解除 flex 子项"最小宽度等于内容宽度"的默认值，不加的话长 SQL 会把列表挤没。
+   主区域白底（侧栏浅灰），与黑白灰改版截图一致 */
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  background: var(--surface);
 }
 
+/* 顶栏只留表结构入口，靠右、无边框，主区域保持留白（参照截图） */
 .chat-header {
   display: flex;
   align-items: center;
-  padding: 8px 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  justify-content: flex-end;
+  padding: 10px 20px 0;
+  background: transparent;
   z-index: 1;
 }
 
@@ -326,12 +335,18 @@ onMounted(async () => {
   padding: 24px 32px;
 }
 
+/* 消息列与输入框同宽居中 */
+.chat-column {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  padding: 14vh 0 8vh;
   text-align: center;
 }
 
@@ -391,9 +406,9 @@ onMounted(async () => {
 
 .example-chip:hover {
   color: var(--primary);
-  border-color: var(--primary);
+  border-color: var(--primary-light);
   background: var(--primary-bg);
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .loading-indicator {
@@ -429,37 +444,35 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
-/* 输入框下方的数据源选择行：类型选择器靠左 + 管理页快捷入口 */
-.ds-picker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 280px;
-}
-
-.ds-picker .ds-selector {
-  flex: 1;
+/* 输入框左下的数据源 chip：把类型选择器压成小胶囊样式 */
+.ds-chip {
   min-width: 0;
 }
 
-.ds-manage-link {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all var(--transition);
-  flex-shrink: 0;
+.ds-chip :deep(.ds-selector) {
+  min-width: 0;
 }
 
-.ds-manage-link:hover {
-  color: var(--primary);
+.ds-chip :deep(.el-input__wrapper) {
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  box-shadow: none;
+  padding: 0 8px;
+}
+
+.ds-chip :deep(.el-input__wrapper:hover) {
   border-color: var(--primary-light);
-  background: var(--primary-bg);
+  background: var(--bg);
+}
+
+.ds-chip :deep(.el-input__inner) {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.ds-chip :deep(.el-input__prefix) {
+  color: var(--text-muted);
 }
 </style>

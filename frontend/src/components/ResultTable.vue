@@ -46,8 +46,7 @@ const headerStyle = {
 
 <style scoped>
 .result-table-wrapper {
-  margin: 4px 0 20px 44px;
-  max-width: 75%;
+  margin: -8px 0 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;

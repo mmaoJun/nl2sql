@@ -66,7 +66,7 @@ defineEmits(['update:modelValue'])
 
 .model-selector :deep(.el-input__wrapper.is-focus) {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
 }
 
 .model-option {

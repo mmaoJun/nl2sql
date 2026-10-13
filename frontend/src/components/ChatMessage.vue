@@ -1,19 +1,6 @@
 <template>
+  <!-- 无头像布局：用户气泡靠右、助手回答占满消息列直排（参照黑白灰改版截图） -->
   <div :class="['msg-row', message.role === 'user' ? 'msg-user' : 'msg-system']">
-    <div class="msg-avatar">
-      <div v-if="message.role === 'user'" class="avatar avatar-user">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
-      </div>
-      <div v-else class="avatar avatar-ai">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-          <path d="M8 21h8M12 17v4"/>
-        </svg>
-      </div>
-    </div>
     <div :class="['message-bubble', message.role === 'user' ? 'message-user' : 'message-system']">
       <div v-if="message.content || message.streaming" class="message-content">
         {{ message.content }}<span v-if="message.streaming" class="stream-cursor"></span>
@@ -80,49 +67,21 @@ defineEmits(['retry'])
 <style scoped>
 .msg-row {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   align-items: flex-start;
 }
 
 .msg-user {
-  flex-direction: row-reverse;
-}
-
-.msg-avatar {
-  flex-shrink: 0;
-}
-
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.avatar-user {
-  background: var(--primary);
-  color: #fff;
-}
-
-.avatar-ai {
-  background: var(--primary-bg);
-  color: var(--primary);
-  border: 1px solid rgba(79, 70, 229, 0.15);
+  justify-content: flex-end;
 }
 
 .msg-row .message-bubble {
-  max-width: 75%;
-}
-
-.msg-user .message-bubble {
-  border-bottom-right-radius: 4px;
+  max-width: 70%;
 }
 
 .msg-system .message-bubble {
-  border-bottom-left-radius: 4px;
+  max-width: 100%;
+  width: 100%;
 }
 
 .message-content {
@@ -205,7 +164,7 @@ defineEmits(['retry'])
 }
 
 .sql-header {
-  background: #151d2d;
+  background: #1a1b1d;
   padding: 6px 14px;
   display: flex;
   align-items: center;
@@ -214,14 +173,14 @@ defineEmits(['retry'])
 .sql-lang {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: #9ca3af;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
 
 .sql-code {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: #232427;
+  color: #e5e7eb;
   padding: 14px 18px;
   font-family: var(--font-mono);
   font-size: 13px;

@@ -155,7 +155,7 @@ async function handleRegister() {
 .bg-glow-1 {
   width: 500px;
   height: 500px;
-  background: #6366f1;
+  background: #3f4247;
   top: -150px;
   right: -100px;
 }
@@ -163,7 +163,7 @@ async function handleRegister() {
 .bg-glow-2 {
   width: 400px;
   height: 400px;
-  background: #7c3aed;
+  background: #17181a;
   bottom: -100px;
   left: -80px;
 }
@@ -189,13 +189,13 @@ async function handleRegister() {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #3f4247, #17181a);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   margin-bottom: 16px;
-  box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
 }
 
 .card-header h2 {
@@ -220,11 +220,11 @@ async function handleRegister() {
 }
 
 .auth-tabs :deep(.el-tabs__active-bar) {
-  background-color: #4f46e5;
+  background-color: #26282c;
 }
 
 .auth-tabs :deep(.el-tabs__item.is-active) {
-  color: #4f46e5;
+  color: #26282c;
 }
 
 .auth-form .el-form-item {

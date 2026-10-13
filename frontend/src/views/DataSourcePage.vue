@@ -142,14 +142,14 @@ const form = reactive({
   extraConfig: ''
 })
 
-// 类型色仅用于卡片图标底色，取各引擎的品牌近似色
+// 类型图标底色走灰阶梯度（黑白灰主题），仅靠深浅区分类型
 const TYPE_COLORS = {
-  mysql: '#4479a1',
-  postgresql: '#336791',
-  hive: '#f28c00',
-  hdfs: '#16a34a',
-  rest: '#7c3aed',
-  graphql: '#e10098'
+  mysql: '#26282c',
+  postgresql: '#3f4247',
+  hive: '#55585c',
+  hdfs: '#6b6e72',
+  rest: '#838689',
+  graphql: '#9ca0a3'
 }
 
 function typeColor(code) {
@@ -536,7 +536,7 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition);
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .btn-primary.sm {
@@ -546,7 +546,7 @@ onMounted(() => {
 
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-dark);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 .btn-primary:disabled {
@@ -683,7 +683,7 @@ onMounted(() => {
 
 .form-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
 }
 
 .form-input::placeholder {
