@@ -93,15 +93,25 @@
         @send="handleSend"
         @stop="handleStop"
       >
-        <!-- 对话开始后输入框左下显示当前数据源 chip（可点击切换）；
+        <!-- 对话开始后数据源即锁定：输入框左下只读展示，要换只能新建对话。
              开新对话前的选择入口在欢迎页输入框下方 -->
         <template #footer-left>
-          <div class="ds-chip">
-            <DataSourceSelector
-              v-model="selectedDsId"
-              variant="chip"
-              :data-sources="dsStore.dataSources"
-            />
+          <div
+            v-if="selectedDs"
+            class="ds-static"
+            title="本次对话已锁定数据源，如需更换请新建对话"
+          >
+            <svg
+              v-if="brandOf(selectedDs.type)"
+              class="ds-static-logo"
+              :viewBox="brandOf(selectedDs.type).viewBox"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path :d="brandOf(selectedDs.type).path" />
+            </svg>
+            <el-icon v-else :size="14" class="ds-static-logo"><Coin /></el-icon>
+            <span class="ds-static-name">{{ selectedDs.name }}</span>
           </div>
         </template>
       </ChatInput>
@@ -124,6 +134,8 @@ import TracePanel from '../components/TracePanel.vue'
 import SessionList from '../components/SessionList.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
 import DataSourcePage from './DataSourcePage.vue'
+import { BRAND_ICONS } from '../assets/brandIcons'
+import { Coin } from '@element-plus/icons-vue'
 
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
@@ -134,7 +146,14 @@ const router = useRouter()
 const isManageView = computed(() => route.path.startsWith('/datasources'))
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
+/** 当前选中的数据源对象（锁定展示用；切换入口只存在于欢迎页） */
+const selectedDs = computed(() => dsStore.dataSources.find((d) => d.id === selectedDsId.value) || null)
 const loadError = ref(false)
+
+/** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */
+function brandOf(code) {
+  return BRAND_ICONS[code] || null
+}
 // 欢迎页问候语用（与侧栏同源，读 localStorage 的登录名）
 const username = ref(localStorage.getItem('username') || '')
 // 首屏 / 切会话的历史加载中（骨架屏），与 chatStore.loading（生成中）分开
@@ -397,9 +416,34 @@ onMounted(async () => {
   margin-left: 2px;
 }
 
-/* 输入框左下的数据源 chip：胶囊样式在组件内定义，这里只做定位约束 */
-.ds-chip {
-  min-width: 0;
+/* 输入框左下的数据源：只读胶囊，无 hover / 无 pointer（本次对话不再可切换） */
+.ds-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: default;
+  user-select: none;
+}
+
+.ds-static-logo {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ds-static-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .welcome-examples {
@@ -483,35 +527,4 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
-/* 输入框左下的数据源 chip：把类型选择器压成小胶囊样式 */
-.ds-chip {
-  min-width: 0;
-}
-
-.ds-chip :deep(.ds-selector) {
-  min-width: 0;
-}
-
-.ds-chip :deep(.el-input__wrapper) {
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface-hover);
-  box-shadow: none;
-  padding: 0 8px;
-}
-
-.ds-chip :deep(.el-input__wrapper:hover) {
-  border-color: var(--primary-light);
-  background: var(--bg);
-}
-
-.ds-chip :deep(.el-input__inner) {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-.ds-chip :deep(.el-input__prefix) {
-  color: var(--text-muted);
-}
 </style>
