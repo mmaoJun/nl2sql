@@ -12,7 +12,8 @@
     />
 
     <div v-if="isManageView" class="manage-pane">
-      <DataSourcePage />
+      <DataSourceDetail v-if="detailDsId" :key="detailDsId" :datasource-id="detailDsId" />
+      <DataSourcePage v-else />
     </div>
 
     <div v-else class="chat-main">
@@ -134,6 +135,7 @@ import TracePanel from '../components/TracePanel.vue'
 import SessionList from '../components/SessionList.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
 import DataSourcePage from './DataSourcePage.vue'
+import DataSourceDetail from './DataSourceDetail.vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { Coin } from '@element-plus/icons-vue'
 
@@ -144,6 +146,11 @@ const route = useRoute()
 const router = useRouter()
 // /datasources 复用本外壳：右侧换成数据源管理，左侧会话栏常驻
 const isManageView = computed(() => route.path.startsWith('/datasources'))
+/** 详情路由 /datasources/:id 时取出数据源 id，否则为 null（列表/向导） */
+const detailDsId = computed(() => {
+  const matched = route.path.match(/^\/datasources\/(\d+)$/)
+  return matched ? Number(matched[1]) : null
+})
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 /** 当前选中的数据源对象（锁定展示用；切换入口只存在于欢迎页） */

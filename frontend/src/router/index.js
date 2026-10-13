@@ -25,6 +25,12 @@ const routes = [
     component: () => import('../views/ChatPage.vue')
   },
   {
+    // 数据源详情：同样复用 ChatPage 外壳，右侧换成该数据源的表结构与数据预览
+    path: '/datasources/:id(\\d+)',
+    name: 'DataSourceDetail',
+    component: () => import('../views/ChatPage.vue')
+  },
+  {
     // 原「设置」页内容就是数据源管理，独立成 /datasources 后旧地址重定向兜底
     path: '/settings',
     redirect: '/datasources'

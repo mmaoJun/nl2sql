@@ -10,6 +10,9 @@ export const register = (data) => client.post('/auth/register', data)
 export const getTables = (datasourceId) => client.get('/metadata/tables', { params: { datasourceId } })
 export const getColumns = (datasourceId, tableName) => client.get(`/metadata/tables/${tableName}/columns`, { params: { datasourceId } })
 export const refreshMetadata = (datasourceId) => client.post('/metadata/refresh', null, { params: { datasourceId } })
+// 数据预览：后端拼 SELECT * FROM <表名> LIMIT n，表名过白名单且整条 SQL 过安全校验，只读
+export const getTablePreview = (datasourceId, tableName, limit = 20) =>
+  client.get(`/metadata/tables/${tableName}/preview`, { params: { datasourceId, limit } })
 
 // 数据源管理
 export const getDataSources = () => client.get('/datasources')

@@ -22,7 +22,7 @@
       </div>
 
       <div v-if="filtered.length" class="ds-grid">
-        <div v-for="ds in filtered" :key="ds.id" class="ds-card">
+        <div v-for="ds in filtered" :key="ds.id" class="ds-card" @click="openDetail(ds)">
           <div class="card-head">
             <span class="type-icon">
               <svg v-if="brandOf(ds.type)" :viewBox="brandOf(ds.type).viewBox" fill="currentColor" aria-hidden="true">
@@ -42,13 +42,14 @@
           <div class="card-footer">
             <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
             <div class="card-actions">
-              <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click="handleTest(ds.id)">
+              <!-- 卡片整体进详情，三个操作按钮各自 stop，避免顺带跳转 -->
+              <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click.stop="handleTest(ds.id)">
                 <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
               </button>
-              <button class="icon-btn" title="编辑" @click="openEdit(ds)">
+              <button class="icon-btn" title="编辑" @click.stop="openEdit(ds)">
                 <el-icon :size="14"><EditPen /></el-icon>
               </button>
-              <button class="icon-btn danger" title="删除" @click="handleDelete(ds)">
+              <button class="icon-btn danger" title="删除" @click.stop="handleDelete(ds)">
                 <el-icon :size="14"><Delete /></el-icon>
               </button>
             </div>
@@ -415,6 +416,11 @@ function startWizard() {
   router.push('/datasources/new')
 }
 
+/** 点卡片进详情：整卡可点，操作按钮各自 stop */
+function openDetail(ds) {
+  router.push(`/datasources/${ds.id}`)
+}
+
 function pickType(t) {
   pickedType.value = t
   Object.assign(form, {
@@ -661,6 +667,7 @@ onMounted(() => {
   border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 16px 18px 12px;
+  cursor: pointer;
   transition: all var(--transition);
 }
 
