@@ -92,7 +92,7 @@
       </aside>
 
       <!-- ============ 右栏：基本信息 / 表详情 ============ -->
-      <section class="detail-content" :class="{ 'preview-mode': tab === 'preview' && selectedTable }">
+      <section class="detail-content">
         <!-- 基本信息：库名 + 表数/列数 + 表清单 -->
         <template v-if="!selectedTable">
           <div class="content-title">
@@ -105,22 +105,24 @@
               <span class="col-comment">备注</span>
               <span class="col-count">列数</span>
             </div>
-            <button
-              v-for="t in filteredTables"
-              :key="t.tableName"
-              type="button"
-              class="table-list-row"
-              @click="selectTable(t.tableName)"
-            >
-              <span class="col-name">{{ t.tableName }}</span>
-              <span class="col-comment">
-                <el-icon :size="13" class="cell-icon"><Tickets /></el-icon>
-                <span>{{ t.comment || '-' }}</span>
-              </span>
-              <span class="col-count">{{ t.columnCount ?? '-' }}</span>
-            </button>
-            <div v-if="filteredTables.length === 0" class="table-list-empty">
-              {{ tables.length === 0 ? '这个数据源没有读到表结构' : '没有匹配的表' }}
+            <div class="table-list-body">
+              <button
+                v-for="t in filteredTables"
+                :key="t.tableName"
+                type="button"
+                class="table-list-row"
+                @click="selectTable(t.tableName)"
+              >
+                <span class="col-name">{{ t.tableName }}</span>
+                <span class="col-comment">
+                  <el-icon :size="13" class="cell-icon"><Tickets /></el-icon>
+                  <span>{{ t.comment || '-' }}</span>
+                </span>
+                <span class="col-count">{{ t.columnCount ?? '-' }}</span>
+              </button>
+              <div v-if="filteredTables.length === 0" class="table-list-empty">
+                {{ tables.length === 0 ? '这个数据源没有读到表结构' : '没有匹配的表' }}
+              </div>
             </div>
           </div>
         </template>
@@ -150,33 +152,35 @@
           </div>
 
           <!-- 字段结构 -->
-          <div v-if="tab === 'columns'" class="columns-panel" v-loading="columnsLoading">
+          <div v-if="tab === 'columns'" class="columns-panel">
             <div class="grid-head">
               <span class="c-col">列名</span>
               <span class="c-comment"><span>备注</span></span>
               <span class="c-semantic">语义类型</span>
             </div>
-            <template v-for="col in columns" :key="col.columnName">
-              <div class="grid-row">
-                <button class="c-col cell-name" type="button" @click="toggleExpand(col.columnName)">
-                  <el-icon :size="12" class="caret" :class="{ open: expanded.has(col.columnName) }"><CaretRight /></el-icon>
-                  <span>{{ col.columnName }}</span>
-                </button>
-                <span class="c-comment">
-                  <el-icon :size="13" class="cell-icon"><Tickets /></el-icon>
-                  <span>{{ col.comment || '-' }}</span>
-                </span>
-                <span class="c-semantic">{{ semanticType(col) }}</span>
-              </div>
-              <div v-if="expanded.has(col.columnName)" class="grid-row-detail">
-                <span class="detail-pair"><b>数据类型</b>{{ col.dataType || '-' }}</span>
-                <span class="detail-pair"><b>完整类型</b>{{ col.columnType || '-' }}</span>
-                <span class="detail-pair"><b>键</b>{{ col.columnKey || '-' }}</span>
-                <span class="detail-pair"><b>可空</b>{{ col.isNullable || '-' }}</span>
-                <span class="detail-pair"><b>默认值</b>{{ col.defaultValue ?? '-' }}</span>
-              </div>
-            </template>
-            <div v-if="columns.length === 0 && !columnsLoading" class="columns-empty">没有读到字段信息</div>
+            <div class="columns-body" v-loading="columnsLoading">
+              <template v-for="col in columns" :key="col.columnName">
+                <div class="grid-row">
+                  <button class="c-col cell-name" type="button" @click="toggleExpand(col.columnName)">
+                    <el-icon :size="12" class="caret" :class="{ open: expanded.has(col.columnName) }"><CaretRight /></el-icon>
+                    <span>{{ col.columnName }}</span>
+                  </button>
+                  <span class="c-comment">
+                    <el-icon :size="13" class="cell-icon"><Tickets /></el-icon>
+                    <span>{{ col.comment || '-' }}</span>
+                  </span>
+                  <span class="c-semantic">{{ semanticType(col) }}</span>
+                </div>
+                <div v-if="expanded.has(col.columnName)" class="grid-row-detail">
+                  <span class="detail-pair"><b>数据类型</b>{{ col.dataType || '-' }}</span>
+                  <span class="detail-pair"><b>完整类型</b>{{ col.columnType || '-' }}</span>
+                  <span class="detail-pair"><b>键</b>{{ col.columnKey || '-' }}</span>
+                  <span class="detail-pair"><b>可空</b>{{ col.isNullable || '-' }}</span>
+                  <span class="detail-pair"><b>默认值</b>{{ col.defaultValue ?? '-' }}</span>
+                </div>
+              </template>
+              <div v-if="columns.length === 0 && !columnsLoading" class="columns-empty">没有读到字段信息</div>
+            </div>
           </div>
 
           <!-- 数据预览：整块装进带边框的容器，50 条/页，底部页码 -->
@@ -781,41 +785,38 @@ watch(() => props.datasourceId, () => {
   text-align: center;
 }
 
+/* 右栏整体纵向 flex、自身不滚：头部信息（库名/表数、表名/备注、tab）常驻，
+   滚动交给下方各自的列表区，避免长列表把表头和上方信息一起顶走 */
 .detail-content {
   flex: 1;
   min-width: 0;
   padding: 20px 24px 28px;
-  overflow-y: auto;
-}
-
-/* 预览态：整栏改为纵向 flex，让预览框吃掉剩余高度（表体自己滚，页脚钉在底部），
-   否则表格按内容高度铺开后下方留一大片空白 */
-.detail-content.preview-mode {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.detail-content.preview-mode .table-head,
-.detail-content.preview-mode .tabs {
+.content-title,
+.table-head,
+.tabs {
   flex-shrink: 0;
 }
 
-.detail-content.preview-mode .preview-panel {
+.preview-panel {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.detail-content.preview-mode .preview-box {
+.preview-box {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.detail-content.preview-mode .preview-table {
+.preview-table {
   flex: 1;
   min-height: 0;
 }
@@ -843,6 +844,10 @@ watch(() => props.datasourceId, () => {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-list-head,
@@ -855,11 +860,19 @@ watch(() => props.datasourceId, () => {
 }
 
 .table-list-head {
+  flex-shrink: 0;
   background: #f8fafc;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+/* 表清单的滚动区：表头留在框内不动，只有行滚动 */
+.table-list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .table-list-row {
@@ -991,7 +1004,10 @@ watch(() => props.datasourceId, () => {
 
 /* ---- 字段结构 ---- */
 .columns-panel {
-  min-height: 120px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .grid-head,
@@ -1004,11 +1020,19 @@ watch(() => props.datasourceId, () => {
 }
 
 .grid-head {
+  flex-shrink: 0;
   background: #f8fafc;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+/* 字段结构的滚动区：列名表头常驻，只有字段行滚动 */
+.columns-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .grid-row {
@@ -1100,7 +1124,6 @@ watch(() => props.datasourceId, () => {
 /* ---- 数据预览：带边框容器 + 底部分页 ---- */
 .preview-panel {
   padding-top: 14px;
-  min-height: 120px;
 }
 
 .preview-box {
@@ -1109,15 +1132,8 @@ watch(() => props.datasourceId, () => {
   overflow: hidden;
 }
 
-.preview-table {
-  min-height: 120px;
-}
-
-.preview-loading {
-  min-height: 200px;
-}
-
 .preview-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
