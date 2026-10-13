@@ -17,7 +17,7 @@
           <el-icon v-else-if="connStatus === 'fail'" :size="13"><CircleClose /></el-icon>
           <span>{{ CONN_LABELS[connStatus] || CONN_LABELS.idle }}</span>
         </span>
-        <button class="ghost-btn" :disabled="connStatus === 'testing'" @click="testConnection">
+        <button class="ghost-btn" :disabled="connStatus === 'testing'" @click="dsStore.checkOne(props.datasourceId)">
           <el-icon :size="13"><Connection /></el-icon>
           <span>测试连接</span>
         </button>
@@ -208,8 +208,8 @@ import {
   CircleCheck, CircleClose
 } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
-import { useDataSourceStore } from '../stores/datasourceStore'
-import { getTables, getColumns, refreshMetadata, getTablePreview, testDataSource } from '../api/endpoints'
+import { useDataSourceStore, CONN_LABELS } from '../stores/datasourceStore'
+import { getTables, getColumns, refreshMetadata, getTablePreview } from '../api/endpoints'
 
 const props = defineProps({
   datasourceId: { type: Number, required: true }
@@ -228,9 +228,8 @@ const tab = ref('columns')
 /** 列表/向导里刚测试过或加载过的数据源直接用；直接输 URL 进来时 store 可能为空 */
 const ds = computed(() => dsStore.dataSources.find((d) => d.id === props.datasourceId) || null)
 
-/** 连接情况：null = 未测试；进页面自动测一次，也可以手动点「测试连接」 */
-const connStatus = ref(null)
-const CONN_LABELS = { idle: '未测试', testing: '测试中', ok: '连接正常', fail: '连接失败' }
+/** 连接情况取自 store（列表页、选择器共用同一份探测结果） */
+const connStatus = computed(() => dsStore.connStatus[props.datasourceId] || null)
 
 const filteredTables = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -358,14 +357,8 @@ async function handleRefresh() {
 }
 
 /** 测连接：失败语义是「HTTP 200 + 业务码 500」，拦截器已按 silent 跳过提示，这里落状态 */
-async function testConnection() {
-  connStatus.value = 'testing'
-  try {
-    const res = await testDataSource(props.datasourceId)
-    connStatus.value = res.data ? 'ok' : 'fail'
-  } catch (e) {
-    connStatus.value = 'fail'
-  }
+function testConnection() {
+  dsStore.checkOne(props.datasourceId)
 }
 
 function backToList() {
@@ -459,7 +452,7 @@ watch(() => props.datasourceId, () => {
   flex-shrink: 0;
 }
 
-/* 连接情况标签：与数据源列表同一套配色（正常走灰阶 success，失败用 error） */
+/* 连接情况标签：与数据源列表同一套配色（正常=绿，失败=红） */
 .conn-status {
   display: inline-flex;
   align-items: center;
@@ -472,8 +465,8 @@ watch(() => props.datasourceId, () => {
 }
 
 .conn-status.ok {
-  color: var(--success);
-  background: var(--success-bg);
+  color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .conn-status.fail {

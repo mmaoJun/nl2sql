@@ -40,12 +40,15 @@
               <el-icon v-else><Coin /></el-icon>
             </span>
             <span class="card-name">{{ ds.name }}</span>
-            <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
-            <span class="conn-status" :class="connStatus[ds.id] || 'idle'">
-              <el-icon v-if="connStatus[ds.id] === 'testing'" :size="13" class="spinning"><Loading /></el-icon>
-              <el-icon v-else-if="connStatus[ds.id] === 'ok'" :size="13"><CircleCheck /></el-icon>
-              <el-icon v-else-if="connStatus[ds.id] === 'fail'" :size="13"><CircleClose /></el-icon>
-              <span>{{ CONN_LABELS[connStatus[ds.id]] || CONN_LABELS.idle }}</span>
+            <!-- 类型在上、连接情况在下（连接情况由 store 统一探测，列表/详情/选择器共用） -->
+            <span class="card-meta-col">
+              <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
+              <span class="conn-status" :class="dsStore.connStatus[ds.id] || 'idle'">
+                <el-icon v-if="dsStore.connStatus[ds.id] === 'testing'" :size="13" class="spinning"><Loading /></el-icon>
+                <el-icon v-else-if="dsStore.connStatus[ds.id] === 'ok'" :size="13"><CircleCheck /></el-icon>
+                <el-icon v-else-if="dsStore.connStatus[ds.id] === 'fail'" :size="13"><CircleClose /></el-icon>
+                <span>{{ CONN_LABELS[dsStore.connStatus[ds.id]] || CONN_LABELS.idle }}</span>
+              </span>
             </span>
           </div>
 
@@ -55,8 +58,8 @@
             <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
             <div class="card-actions">
               <!-- 卡片整体进详情，三个操作按钮各自 stop，避免顺带跳转 -->
-              <button class="icon-btn" title="测试连接" :disabled="connStatus[ds.id] === 'testing'" @click.stop="testOne(ds.id)">
-                <el-icon :size="14"><Loading v-if="connStatus[ds.id] === 'testing'" /><Connection v-else /></el-icon>
+              <button class="icon-btn" title="测试连接" :disabled="dsStore.connStatus[ds.id] === 'testing'" @click.stop="dsStore.checkOne(ds.id)">
+                <el-icon :size="14"><Loading v-if="dsStore.connStatus[ds.id] === 'testing'" /><Connection v-else /></el-icon>
               </button>
               <button class="icon-btn" title="编辑" @click.stop="openEdit(ds)">
                 <el-icon :size="14"><EditPen /></el-icon>
@@ -283,9 +286,9 @@ import {
   Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, CircleClose, Check, Coin, ArrowLeft
 } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
-import { useDataSourceStore } from '../stores/datasourceStore'
+import { useDataSourceStore, CONN_LABELS } from '../stores/datasourceStore'
 import {
-  createDataSource, updateDataSource, deleteDataSource, testDataSource
+  createDataSource, updateDataSource, deleteDataSource
 } from '../api/endpoints'
 
 const dsStore = useDataSourceStore()
@@ -301,10 +304,8 @@ const pickedType = ref(null)
 const showDialog = ref(false)
 const creating = ref(false)
 const keyword = ref('')
-/** 连接情况：id → 'testing' | 'ok' | 'fail'，缺省表示未测试（仅页面内存态，刷新即清） */
-const connStatus = reactive({})
+/** 一键测试进行中（连接情况本身放在 datasourceStore，跨列表/详情/选择器共用） */
 const testingAll = ref(false)
-const CONN_LABELS = { idle: '未测试', testing: '测试中', ok: '正常', fail: '连接失败' }
 /** 当前编辑的数据源 id */
 const editingId = ref(null)
 const dialogType = ref({ code: 'mysql', displayName: 'MySQL', defaultPort: 3306 })
@@ -553,43 +554,19 @@ async function submitEdit() {
 
 /* ---------------- 列表操作 ---------------- */
 
-/** 单个数据源测连接：结果只记在内存里，卡片上的状态标签据此渲染 */
-async function testOne(id) {
-  connStatus[id] = 'testing'
-  try {
-    const res = await testDataSource(id)
-    connStatus[id] = res.data ? 'ok' : 'fail'
-  } catch (e) {
-    // 后端连接失败是「HTTP 200 + 业务码 500」，拦截器按 silent 跳过提示
-    connStatus[id] = 'fail'
-  }
-}
-
-/** 小并发池：一次最多 3 个，避免十几个数据源同时建连接把后端压住 */
-async function runPool(items, size, worker) {
-  let cursor = 0
-  const runners = Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (cursor < items.length) {
-      await worker(items[cursor++])
-    }
-  })
-  await Promise.all(runners)
-}
-
 /** 一键测试全部连接；进页面时的自动测试用 silentSummary 跳过汇总提示 */
 async function testAll({ silentSummary = false } = {}) {
-  if (testingAll.value) return
-  const ids = dataSources.value.map((d) => d.id)
-  if (!ids.length) return
+  if (testingAll.value || dsStore.dataSources.length === 0) return
+  const total = dsStore.dataSources.length
   testingAll.value = true
-  await runPool(ids, 3, testOne)
+  await dsStore.checkAll()
   testingAll.value = false
   if (silentSummary) return
-  const failed = ids.filter((id) => connStatus[id] === 'fail').length
+  const failed = dsStore.dataSources.filter((ds) => dsStore.connStatus[ds.id] === 'fail').length
   if (failed === 0) {
-    ElMessage.success(`${ids.length} 个数据源连接均正常`)
+    ElMessage.success(`${total} 个数据源连接均正常`)
   } else {
-    ElMessage.warning(`${ids.length} 个数据源：${ids.length - failed} 个正常，${failed} 个失败`)
+    ElMessage.warning(`${total} 个数据源：${total - failed} 个正常，${failed} 个失败`)
   }
 }
 
@@ -765,6 +742,15 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+/* 类型与连接情况竖排：类型在上、测试结果在下 */
+.card-meta-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 .type-badge {
   flex-shrink: 0;
   padding: 1px 8px;
@@ -776,7 +762,7 @@ onMounted(async () => {
   letter-spacing: 0.3px;
 }
 
-/* 连接情况标签：正常走灰阶 success，失败用 theme 的 error 色（黑白灰里唯一的语义色） */
+/* 连接情况标签：正常=绿（--ok），失败=theme 的 error 色，未测试/测试中=灰 */
 .conn-status {
   display: inline-flex;
   align-items: center;
@@ -790,8 +776,8 @@ onMounted(async () => {
 }
 
 .conn-status.ok {
-  color: var(--success);
-  background: var(--success-bg);
+  color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .conn-status.fail {

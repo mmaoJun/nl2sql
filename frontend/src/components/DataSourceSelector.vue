@@ -46,7 +46,12 @@
             <el-icon v-else :size="15" class="ds-item-icon"><Coin /></el-icon>
             <span class="ds-item-text">
               <span class="ds-item-name">{{ ds.name }}</span>
-              <span class="ds-item-type">{{ (ds.type || '').toUpperCase() }}</span>
+              <span class="ds-item-type">
+                <span>{{ (ds.type || '').toUpperCase() }}</span>
+                <span class="ds-item-conn" :class="dsStore.connStatus[ds.id] || 'idle'">
+                  · {{ CONN_LABELS[dsStore.connStatus[ds.id]] || CONN_LABELS.idle }}
+                </span>
+              </span>
             </span>
             <el-icon v-if="ds.id === modelValue" :size="14" class="ds-item-check"><Check /></el-icon>
           </button>
@@ -70,10 +75,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Search, Coin, Check, Plus, Operation } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
+import { useDataSourceStore, CONN_LABELS } from '../stores/datasourceStore'
 
 // 选择的是"已配置的数据源连接"（类型制下每种引擎一条，名称即连接名），
 // 底部固定提供添加入口与管理入口；inline=欢迎页文字态，chip=对话态输入框胶囊
@@ -86,9 +92,16 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 const router = useRouter()
+const dsStore = useDataSourceStore()
 
 const visible = ref(false)
 const keyword = ref('')
+
+// 面板展开时把还没测过的数据源补测一次：下拉里要直接能看到可用性，
+// 但每次开面板都重测太费（一键全部测试在数据源管理页）
+watch(visible, (open) => {
+  if (open) dsStore.checkAll({ onlyUnknown: true })
+})
 
 const selected = computed(() => props.dataSources.find((ds) => ds.id === props.modelValue) || null)
 
@@ -287,8 +300,20 @@ function goManage() {
 }
 
 .ds-popover .ds-item-type {
+  display: flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* 可用性：正常绿、失败红、未测过/测试中保持灰 */
+.ds-popover .ds-item-conn.ok {
+  color: var(--ok);
+}
+
+.ds-popover .ds-item-conn.fail {
+  color: var(--error);
 }
 
 .ds-popover .ds-item-check {
