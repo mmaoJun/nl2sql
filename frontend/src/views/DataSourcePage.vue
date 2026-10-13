@@ -25,7 +25,7 @@
         <div v-for="ds in filtered" :key="ds.id" class="ds-card">
           <div class="card-head">
             <span class="type-icon" :style="{ background: typeColor(ds.type) }">
-              {{ (ds.type || '?').charAt(0).toUpperCase() }}
+              <el-icon><component :is="typeIcon(ds.type)" /></el-icon>
             </span>
             <span class="card-name">{{ ds.name }}</span>
             <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
@@ -95,7 +95,7 @@
               @click="pickType(t)"
             >
               <span class="type-icon lg" :style="{ background: typeColor(t.code) }">
-                {{ t.displayName.charAt(0) }}
+                <el-icon><component :is="typeIcon(t.code)" /></el-icon>
               </span>
               <span class="type-text">
                 <span class="type-name">{{ t.displayName }}</span>
@@ -111,7 +111,7 @@
         <div class="connect-card">
           <div class="connect-illustration">
             <span class="type-icon xl" :style="{ background: typeColor(pickedType.code) }">
-              {{ pickedType.displayName.charAt(0) }}
+              <el-icon><component :is="typeIcon(pickedType.code)" /></el-icon>
             </span>
             <span class="illustration-name">{{ pickedType.displayName }}</span>
           </div>
@@ -252,7 +252,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin,
+  Grid, FolderOpened, Share
 } from '@element-plus/icons-vue'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import {
@@ -305,6 +306,17 @@ const TYPE_HINTS = {
   hdfs: 'WebHDFS 目录 · 9870',
   rest: 'REST 接口',
   graphql: 'GraphQL 接口'
+}
+
+// 六类数据源的图标：无品牌 logo（避免侵权），改用可表达该类形态的通用图形。
+// 关系型两库共用圆柱（同属一类，靠名称与色阶区分），其余各取一个贴近语义的图标
+const TYPE_ICONS = {
+  mysql: Coin,
+  postgresql: Coin,
+  hive: Grid,
+  hdfs: FolderOpened,
+  rest: Connection,
+  graphql: Share
 }
 
 // supported-types 拉取失败时的兜底清单（与后端注册的六类一致）
@@ -366,6 +378,10 @@ const dbNameError = computed(() => /[,，]/.test(form.databaseName || ''))
 
 function typeColor(code) {
   return TYPE_COLORS[code] || '#64748b'
+}
+
+function typeIcon(code) {
+  return TYPE_ICONS[code] || Coin
 }
 
 /** 卡片副文案：当前没有采集库/表统计，用连接目标替代"描述" */
@@ -658,6 +674,7 @@ onMounted(() => {
   gap: 10px;
 }
 
+/* 图标尺寸继承此处 font-size（el-icon 为 1em），三个档位只需改字号 */
 .type-icon {
   width: 34px;
   height: 34px;
@@ -666,8 +683,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 17px;
   flex-shrink: 0;
 }
 
@@ -682,7 +698,7 @@ onMounted(() => {
   width: 120px;
   height: 120px;
   border-radius: 28px;
-  font-size: 52px;
+  font-size: 46px;
 }
 
 .card-name {
