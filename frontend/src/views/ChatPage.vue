@@ -185,7 +185,10 @@ function fillQuery(q) {
 
 function handleCreateSession() {
   // 新建对话数据源回到"未选择"（先选源再提问）；会话不预建，首问由后端自动创建
-  // 并在 FINAL 里回填 sessionId（T11 契约，见 handleSend 注释），避免产生空会话
+  // 并在 FINAL 里回填 sessionId（T11 契约，见 handleSend 注释），避免产生空会话。
+  // 同时把当前会话 id 清成 null：否则侧栏那条旧会话仍算"选中"而保持加粗，
+  // 且再点它会被 handleSelectSession 的"重复点击直接返回"吞掉，得先点别的会话才能点回来
+  sessionStore.setCurrent(null)
   chatStore.clearMessages()
   loadError.value = false
   selectedDsId.value = null
