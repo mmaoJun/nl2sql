@@ -123,8 +123,8 @@ watch(() => props.loading, (value) => {
   flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 48px 12px 16px;
+  border-radius: 18px;
+  padding: 14px 54px 14px 18px;
   transition: border-color var(--transition), box-shadow var(--transition);
   box-shadow: var(--shadow-sm);
 }
@@ -142,12 +142,12 @@ watch(() => props.loading, (value) => {
   outline: none;
   resize: none;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   color: var(--text);
   background: transparent;
   padding: 0;
-  min-height: 22px;
+  min-height: 24px;
   max-height: 200px;
   overflow-y: hidden;
 }
@@ -194,8 +194,8 @@ watch(() => props.loading, (value) => {
 }
 
 .send-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: none;
   background: #e8e8ea;
@@ -225,8 +225,8 @@ watch(() => props.loading, (value) => {
 }
 
 .stop-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--el-color-danger-light-5);
   background: var(--el-color-danger-light-9);

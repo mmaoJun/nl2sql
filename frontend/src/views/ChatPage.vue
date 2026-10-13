@@ -354,7 +354,7 @@ onMounted(async () => {
 
 .welcome-input {
   width: 100%;
-  max-width: 720px;
+  max-width: 840px;
 }
 
 .welcome-input :deep(.chat-input-wrapper) {
@@ -377,7 +377,7 @@ onMounted(async () => {
 .welcome-examples {
   margin-top: 56px;
   width: 100%;
-  max-width: 720px;
+  max-width: 840px;
 }
 
 .examples-label {

@@ -67,7 +67,6 @@
               <span class="session-title">{{ s.title || '新对话' }}</span>
               <span class="session-meta">{{ metaText(s) }}</span>
             </div>
-            <span v-if="s.preview" class="session-preview">{{ s.preview }}</span>
           </div>
           <div class="session-actions" @click.stop>
             <button class="action-btn" title="重命名" @click="onRename(s)">
@@ -179,7 +178,7 @@ async function onRemove(session) {
 <style scoped>
 .session-list {
   position: relative;
-  width: 260px;
+  width: 228px;
   flex-shrink: 0;
   border-right: 1px solid var(--border-light);
   background: var(--surface-hover);
@@ -258,9 +257,9 @@ async function onRemove(session) {
   background: var(--primary-dark);
 }
 
-/* ---- 全量层：固定 260 宽，收起时淡出（宽度动画期间内容不挤压变形） ---- */
+/* ---- 全量层：固定 228 宽，收起时淡出（宽度动画期间内容不挤压变形） ---- */
 .full {
-  width: 260px;
+  width: 228px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -432,15 +431,6 @@ async function onRemove(session) {
   font-size: 11px;
   line-height: 1.35;
   color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.session-preview {
-  font-size: 11.5px;
-  line-height: 1.35;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
