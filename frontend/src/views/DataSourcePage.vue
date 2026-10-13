@@ -144,13 +144,14 @@
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">{{ wizardApiType ? '基础路径' : '数据库 DB' }}</label>
+              <label class="form-label">
+                {{ wizardApiType ? '基础路径' : '数据库 DB' }}<span class="req">*</span>
+              </label>
               <input
                 v-model="form.databaseName"
                 class="form-input"
                 :placeholder="wizardApiType ? '接口基础路径，例如 /api' : '输入数据库名称'"
               />
-              <span v-if="!wizardApiType" class="field-hint">仅支持单个数据库；留空表示使用连接默认库</span>
               <span v-if="dbNameError" class="field-error">数据库名只支持一个，请不要使用逗号</span>
             </div>
             <div v-if="wizardApiType" class="form-group">
@@ -165,7 +166,11 @@
             </div>
             <div class="connect-actions">
               <button class="btn-ghost" @click="wizardStep = 1">上一步</button>
-              <button class="btn-primary" :disabled="creating || extraConfigError" @click="submitConnection">
+              <button
+                class="btn-primary"
+                :disabled="creating || extraConfigError || dbNameError || !form.host.trim() || !form.databaseName.trim()"
+                @click="submitConnection"
+              >
                 <span v-if="creating">创建中...</span>
                 <span v-else>立即添加</span>
               </button>
@@ -264,9 +269,10 @@
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">{{ dialogApiType ? '基础路径' : '数据库名' }}</label>
+              <label class="form-label">
+                {{ dialogApiType ? '基础路径' : '数据库名' }}<span class="req">*</span>
+              </label>
               <input v-model="form.databaseName" class="form-input" :placeholder="dialogApiType ? '/api' : 'my_database'" />
-              <span v-if="!dialogApiType" class="field-hint">仅支持单个数据库；留空表示使用连接默认库</span>
               <span v-if="dbNameError" class="field-error">数据库名只支持一个，请不要使用逗号</span>
             </div>
             <div class="form-row">
@@ -292,7 +298,11 @@
           </div>
           <div class="dialog-footer">
             <button class="btn-ghost" @click="closeDialog">取消</button>
-            <button class="btn-primary" @click="submitEdit" :disabled="creating || extraConfigError">
+            <button
+              class="btn-primary"
+              :disabled="creating || extraConfigError || dbNameError || !form.name.trim() || !form.host.trim() || !form.databaseName.trim()"
+              @click="submitEdit"
+            >
               <span v-if="creating">保存中...</span>
               <span v-else>保存</span>
             </button>
@@ -498,6 +508,10 @@ async function submitConnection() {
     ElMessage.warning('请填写主机')
     return
   }
+  if (!form.databaseName.trim()) {
+    ElMessage.warning(isApiTypeCode(pickedType.value?.code) ? '请填写基础路径' : '请输入数据库名称')
+    return
+  }
   if (dbNameError.value) {
     ElMessage.warning('数据库名只支持一个，请不要使用逗号')
     return
@@ -648,6 +662,10 @@ function closeDialog() {
 async function submitEdit() {
   if (!form.name.trim() || !form.host.trim()) {
     ElMessage.warning('请填写名称与主机')
+    return
+  }
+  if (!form.databaseName.trim()) {
+    ElMessage.warning(dialogApiType.value ? '请填写基础路径' : '请输入数据库名称')
     return
   }
   if (dbNameError.value) {
@@ -1387,9 +1405,9 @@ onMounted(() => {
   color: var(--error);
 }
 
-.field-hint {
-  font-size: 12px;
-  color: var(--text-muted);
+.req {
+  color: var(--error);
+  margin-left: 2px;
 }
 
 /* ---- 编辑弹窗 ---- */
