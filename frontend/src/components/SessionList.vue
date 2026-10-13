@@ -1,12 +1,11 @@
 <template>
   <div class="session-list">
-    <!-- 顶部：唯一控件——数据源选择（全宽浅底圆角，对应参考图顶部选择框） -->
+    <!-- 顶部：数据源管理入口（数据源选择已移到对话输入框下方，由 ChatPage 承载） -->
     <div class="sidebar-top">
-      <DataSourceSelector
-        :model-value="dsId"
-        :data-sources="dataSources"
-        @update:model-value="$emit('update:dsId', $event)"
-      />
+      <button class="ds-manage-btn" @click="goSettings">
+        <el-icon :size="15"><Coin /></el-icon>
+        <span>数据源管理</span>
+      </button>
     </div>
 
     <button class="new-session-btn" @click="$emit('create')">
@@ -63,21 +62,17 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, EditPen, Delete, Setting, SwitchButton } from '@element-plus/icons-vue'
-import DataSourceSelector from './DataSourceSelector.vue'
+import { Plus, EditPen, Delete, Setting, SwitchButton, Coin } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
 defineProps({
   sessions: { type: Array, default: () => [] },
   currentId: { type: Number, default: null },
-  loading: { type: Boolean, default: false },
-  // 数据源选择迁入侧栏后由本组件承载 v-model（接口与原 header 处保持一致）
-  dsId: { type: [Number, null], default: null },
-  dataSources: { type: Array, default: () => [] }
+  loading: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:dsId'])
+const emit = defineEmits(['create', 'select', 'rename', 'remove'])
 
 const username = ref('')
 watch(() => router.currentRoute.value.path, () => {
@@ -157,10 +152,32 @@ async function onRemove(session) {
   min-height: 0;
 }
 
-/* ---- 顶部：数据源选择（全宽，唯一控件） ---- */
+/* ---- 顶部：数据源管理入口（全宽） ---- */
 .sidebar-top {
   padding: 12px 12px 2px;
   flex-shrink: 0;
+}
+
+.ds-manage-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 12px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.ds-manage-btn:hover {
+  border-color: var(--primary-light);
+  background: var(--primary-bg);
+  color: var(--primary);
 }
 
 /* ---- 中部：新对话 + 最近对话 ---- */
@@ -392,6 +409,7 @@ async function onRemove(session) {
 
 /* 键盘可达性：新的按钮保持一致的 focus 视觉 */
 .new-session-btn:focus-visible,
+.ds-manage-btn:focus-visible,
 .footer-btn:focus-visible,
 .logout-btn:focus-visible {
   outline: 2px solid var(--primary-light);

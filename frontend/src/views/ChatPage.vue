@@ -1,11 +1,9 @@
 <template>
   <div class="chat-page">
     <SessionList
-      v-model:dsId="selectedDsId"
       :sessions="sessionStore.sessions"
       :current-id="sessionStore.currentSessionId"
       :loading="sessionStore.loading"
-      :data-sources="dsStore.dataSources"
       @create="handleCreateSession"
       @select="handleSelectSession"
       @rename="handleRenameSession"
@@ -76,7 +74,17 @@
         :loading="chatStore.loading"
         @send="handleSend"
         @stop="handleStop"
-      />
+      >
+        <!-- 数据源选择放在输入框正下方（原侧栏顶部位置已让给「数据源管理」入口） -->
+        <template #below-input>
+          <div class="ds-picker">
+            <DataSourceSelector
+              v-model="selectedDsId"
+              :data-sources="dsStore.dataSources"
+            />
+          </div>
+        </template>
+      </ChatInput>
     </div>
     </div>
 
@@ -98,6 +106,7 @@ import ResultTable from '../components/ResultTable.vue'
 import TracePanel from '../components/TracePanel.vue'
 import SchemaExplorer from '../components/SchemaExplorer.vue'
 import SessionList from '../components/SessionList.vue'
+import DataSourceSelector from '../components/DataSourceSelector.vue'
 
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
@@ -411,5 +420,10 @@ onMounted(async () => {
 .loading-text {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* 输入框下方的数据源选择器：固定宽度靠左，不遮挡居中的提示文字 */
+.ds-picker {
+  width: 240px;
 }
 </style>

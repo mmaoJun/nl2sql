@@ -33,6 +33,10 @@
         </svg>
       </button>
     </div>
+    <!-- 输入框正下方的工具行（当前放数据源选择器）；无内容时不占位 -->
+    <div v-if="$slots['below-input']" class="input-below">
+      <slot name="below-input" />
+    </div>
     <div class="input-hint">
       <span v-if="loading">正在生成回答，点右侧按钮可停止</span>
       <span v-else-if="stoppedNotice" class="hint-stopped">已停止生成</span>
@@ -178,6 +182,13 @@ watch(() => props.loading, (value) => {
 .stop-btn:hover {
   background: var(--el-color-danger-light-8);
   border-color: var(--el-color-danger);
+}
+
+.input-below {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .input-hint {
