@@ -416,14 +416,14 @@ onMounted(async () => {
   margin-left: 2px;
 }
 
-/* 输入框左下的数据源：只读胶囊，无 hover / 无 pointer（本次对话不再可切换） */
+/* 输入框左下的数据源：只读，无描边 / 无 hover / 无 pointer（本次对话不再可切换） */
 .ds-static {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 8px;
   background: var(--surface-hover);
   color: var(--text-secondary);
@@ -432,10 +432,11 @@ onMounted(async () => {
   user-select: none;
 }
 
+/* 用 --text 而非 muted：14px 的细线品牌标识在 #9ca3af 上太淡，基本看不出形态 */
 .ds-static-logo {
   width: 14px;
   height: 14px;
-  color: var(--text-muted);
+  color: var(--text);
   flex-shrink: 0;
 }
 
