@@ -65,7 +65,7 @@
           <div class="session-main">
             <div class="session-title-row">
               <span class="session-title">{{ s.title || '新对话' }}</span>
-              <span class="session-meta">{{ metaText(s) }}</span>
+              <span class="session-meta">{{ formatTime(s.updatedAt) }}</span>
             </div>
           </div>
           <div class="session-actions" @click.stop>
@@ -139,14 +139,6 @@ function formatTime(value) {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   }
   return `${date.getMonth() + 1}/${date.getDate()}`
-}
-
-// 时间与轮数合并成标题行右侧的一枚小灰字，保证会话行紧凑（改为两行结构后
-// 行高约 36–48px）；两段信息都保留，只是排版位置调整
-function metaText(session) {
-  const time = formatTime(session.updatedAt)
-  const turns = `${session.turnCount || 0} 轮`
-  return time ? `${time} · ${turns}` : turns
 }
 
 async function onRename(session) {
