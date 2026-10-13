@@ -1,80 +1,247 @@
 <template>
   <div class="ds-page">
-    <div class="page-header">
-      <div>
-        <h2 class="page-title">数据源</h2>
-        <p class="page-desc">在这里查看和管理您的数据源</p>
-      </div>
-      <el-dropdown trigger="click" @command="openCreateByCode">
-        <button class="btn-primary">
+    <!-- ============ 列表视图 ============ -->
+    <template v-if="wizardStep === 0">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">数据源</h2>
+          <p class="page-desc">在这里查看和管理您的数据源</p>
+        </div>
+        <button class="btn-primary" @click="startWizard">
           <el-icon :size="14"><Plus /></el-icon>
           <span>添加数据源</span>
         </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item v-for="t in typeOptions" :key="t.code" :command="t.code">
-              {{ t.displayName }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-    </div>
-
-    <div class="filter-row">
-      <div class="filter-input">
-        <el-icon :size="15"><Search /></el-icon>
-        <input v-model="keyword" class="filter-ipt" placeholder="按名称过滤..." />
       </div>
-      <span class="filter-count">共 {{ dataSources.length }} 个数据源</span>
-    </div>
 
-    <div v-if="filtered.length" class="ds-grid">
-      <div v-for="ds in filtered" :key="ds.id" class="ds-card">
-        <div class="card-head">
-          <span class="type-icon" :style="{ background: typeColor(ds.type) }">
-            {{ (ds.type || '?').charAt(0).toUpperCase() }}
-          </span>
-          <span class="card-name">{{ ds.name }}</span>
-          <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
-          <el-tooltip v-if="testedOk.has(ds.id)" content="最近一次测试连接成功" placement="top" :show-after="80">
-            <el-icon :size="16" class="card-check"><CircleCheck /></el-icon>
-          </el-tooltip>
+      <div class="filter-row">
+        <div class="filter-input">
+          <el-icon :size="15"><Search /></el-icon>
+          <input v-model="keyword" class="filter-ipt" placeholder="按名称过滤..." />
+        </div>
+        <span class="filter-count">共 {{ dataSources.length }} 个数据源</span>
+      </div>
+
+      <div v-if="filtered.length" class="ds-grid">
+        <div v-for="ds in filtered" :key="ds.id" class="ds-card">
+          <div class="card-head">
+            <span class="type-icon" :style="{ background: typeColor(ds.type) }">
+              {{ (ds.type || '?').charAt(0).toUpperCase() }}
+            </span>
+            <span class="card-name">{{ ds.name }}</span>
+            <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
+            <el-tooltip v-if="testedOk.has(ds.id)" content="最近一次测试连接成功" placement="top" :show-after="80">
+              <el-icon :size="16" class="card-check"><CircleCheck /></el-icon>
+            </el-tooltip>
+          </div>
+
+          <p class="card-desc">{{ describe(ds) }}</p>
+
+          <div class="card-footer">
+            <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
+            <div class="card-actions">
+              <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click="handleTest(ds.id)">
+                <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
+              </button>
+              <button class="icon-btn" title="配置数据表" @click="openTables(ds)">
+                <el-icon :size="14"><Grid /></el-icon>
+              </button>
+              <button class="icon-btn" title="编辑" @click="openEdit(ds)">
+                <el-icon :size="14"><EditPen /></el-icon>
+              </button>
+              <button class="icon-btn danger" title="删除" @click="handleDelete(ds)">
+                <el-icon :size="14"><Delete /></el-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="ds-empty">
+        <p class="empty-text">
+          {{ keyword.trim() ? '没有匹配的数据源' : '还没有数据源，先添加一个吧' }}
+        </p>
+        <button v-if="!keyword.trim()" class="btn-primary sm" @click="startWizard">
+          <el-icon :size="14"><Plus /></el-icon>
+          <span>添加数据源</span>
+        </button>
+      </div>
+    </template>
+
+    <!-- ============ 向导：选择类型 / 配置连接 / 添加数据表 ============ -->
+    <div v-else class="wizard">
+      <div class="steps">
+        <div v-for="(label, i) in STEP_LABELS" :key="label" class="step-wrap">
+          <span v-if="i > 0" class="step-line" :class="{ on: wizardStep > i }"></span>
+          <div class="step" :class="{ current: wizardStep === i + 1, done: wizardStep > i + 1 }">
+            <span class="step-dot">
+              <el-icon v-if="wizardStep > i + 1" :size="12"><Check /></el-icon>
+              <template v-else>{{ i + 1 }}</template>
+            </span>
+            <span class="step-label">{{ label }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤 1：选择类型 -->
+      <div v-if="wizardStep === 1" class="wizard-body">
+        <div v-for="group in typeGroups" :key="group.title" class="type-group">
+          <div class="group-title">
+            <el-icon :size="14"><Coin /></el-icon>
+            <span>{{ group.title }}</span>
+          </div>
+          <div class="type-grid">
+            <button
+              v-for="t in group.types"
+              :key="t.code"
+              class="type-card"
+              :class="{ active: pickedType && pickedType.code === t.code }"
+              @click="pickType(t)"
+            >
+              <span class="type-icon lg" :style="{ background: typeColor(t.code) }">
+                {{ t.displayName.charAt(0) }}
+              </span>
+              <span class="type-text">
+                <span class="type-name">{{ t.displayName }}</span>
+                <span class="type-hint">{{ t.hint }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤 2：配置连接 -->
+      <div v-else-if="wizardStep === 2" class="wizard-body">
+        <div class="connect-card">
+          <div class="connect-illustration">
+            <span class="type-icon xl" :style="{ background: typeColor(pickedType.code) }">
+              {{ pickedType.displayName.charAt(0) }}
+            </span>
+            <span class="illustration-name">{{ pickedType.displayName }}</span>
+          </div>
+          <div class="connect-form">
+            <div class="form-group">
+              <label class="form-label">数据源名称</label>
+              <input v-model="form.name" class="form-input" placeholder="输入数据源名称，留空将自动生成" />
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label class="form-label">主机</label>
+                <input v-model="form.host" class="form-input" placeholder="输入主机地址" />
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">端口</label>
+                <input v-model.number="form.port" type="number" class="form-input" :placeholder="String(pickedType.defaultPort || '')" min="1" max="65535" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label class="form-label">用户名</label>
+                <input v-model="form.username" class="form-input" placeholder="输入用户名" />
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">密码</label>
+                <input v-model="form.password" type="password" class="form-input" placeholder="输入密码" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ wizardApiType ? '基础路径' : '数据库 DB' }}</label>
+              <input
+                v-model="form.databaseName"
+                class="form-input"
+                :placeholder="wizardApiType ? '接口基础路径，例如 /api' : '输入数据库名称，留空表示使用连接默认库'"
+              />
+            </div>
+            <div v-if="wizardApiType" class="form-group">
+              <label class="form-label">高级配置（JSON：headers / tables）</label>
+              <textarea
+                v-model="form.extraConfig"
+                class="form-input form-textarea"
+                rows="4"
+                placeholder='{"headers":{"X-API-KEY":"..."},"tables":[{"name":"department_budgets","path":"/departments"}]}'
+              ></textarea>
+              <span v-if="extraConfigError" class="field-error">JSON 格式不正确</span>
+            </div>
+            <div class="connect-actions">
+              <button class="btn-ghost" @click="wizardStep = 1">上一步</button>
+              <button class="btn-primary" :disabled="creating || extraConfigError" @click="submitConnection">
+                <span v-if="creating">创建中...</span>
+                <span v-else>立即添加</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤 3：添加数据表 -->
+      <div v-else class="wizard-body">
+        <div class="tables-head">
+          <h3 class="tables-title">选择数据表</h3>
+          <span class="tables-note">最多支持 100 张表</span>
         </div>
 
-        <p class="card-desc">{{ describe(ds) }}</p>
+        <div class="tables-card">
+          <div class="db-list">
+            <div class="db-item active">{{ currentDbName }}</div>
+          </div>
 
-        <div class="card-footer">
-          <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
-          <div class="card-actions">
-            <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click="handleTest(ds.id)">
-              <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
-            </button>
-            <button class="icon-btn" title="编辑" @click="openEdit(ds)">
-              <el-icon :size="14"><EditPen /></el-icon>
-            </button>
-            <button class="icon-btn danger" title="删除" @click="handleDelete(ds)">
-              <el-icon :size="14"><Delete /></el-icon>
-            </button>
+          <div class="tables-main">
+            <div class="tabs">
+              <span class="tab active">表</span>
+            </div>
+
+            <div class="tables-toolbar">
+              <div class="filter-input">
+                <el-icon :size="15"><Search /></el-icon>
+                <input v-model="tableKeyword" class="filter-ipt" placeholder="搜索表" />
+              </div>
+              <button class="tool-btn" @click="sortAsc = !sortAsc">
+                <el-icon :size="14"><Sort /></el-icon>
+                <span>排序</span>
+              </button>
+              <label class="tool-check">
+                <input type="checkbox" :checked="allSelected" @change="toggleAll($event.target.checked)" />
+                <span>全选</span>
+              </label>
+            </div>
+
+            <div v-if="tablesLoading" class="tables-state">正在读取数据表...</div>
+            <div v-else-if="tablesError" class="tables-state error">
+              <span>{{ tablesError }}</span>
+              <button class="btn-ghost sm" @click="loadTables(createdDs.id)">重试</button>
+            </div>
+            <div v-else-if="visibleTables.length === 0" class="tables-state">
+              {{ tableKeyword.trim() ? '没有匹配的表' : '该数据源下没有读到表' }}
+            </div>
+            <div v-else class="table-grid">
+              <label v-for="t in visibleTables" :key="t.tableName" class="table-item">
+                <input
+                  type="checkbox"
+                  :checked="selectedTables.has(t.tableName)"
+                  @change="toggleTable(t.tableName, $event.target.checked)"
+                />
+                <span class="table-name">{{ t.tableName }}</span>
+                <span v-if="t.comment" class="table-comment">{{ t.comment }}</span>
+              </label>
+            </div>
+
+            <div class="tables-footer">
+              <button class="btn-ghost" @click="finishWizard">跳过</button>
+              <button class="btn-primary" :disabled="savingTables" @click="saveTables">
+                <span v-if="savingTables">保存中...</span>
+                <span v-else>确认选择 ({{ selectedTables.size }})</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-else class="ds-empty">
-      <p class="empty-text">
-        {{ keyword.trim() ? '没有匹配的数据源' : '还没有数据源，先添加一个吧' }}
-      </p>
-      <button v-if="!keyword.trim()" class="btn-primary sm" @click="openCreateByCode(typeOptions[0].code)">
-        <el-icon :size="14"><Plus /></el-icon>
-        <span>添加数据源</span>
-      </button>
-    </div>
-
+    <!-- ============ 编辑弹窗（新增走向导，编辑沿用弹窗） ============ -->
     <Teleport to="body">
       <div v-if="showDialog" class="dialog-overlay" @click.self="closeDialog">
         <div class="dialog-card">
           <div class="dialog-header">
-            <h3>{{ editingId ? `编辑 ${dialogType.displayName} 数据源` : `添加 ${dialogType.displayName} 数据源` }}</h3>
+            <h3>编辑 {{ dialogType.displayName }} 数据源</h3>
             <button class="dialog-close" @click="closeDialog">
               <el-icon :size="18"><Close /></el-icon>
             </button>
@@ -95,8 +262,8 @@
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">{{ isApiType ? '基础路径' : '数据库名' }}</label>
-              <input v-model="form.databaseName" class="form-input" :placeholder="isApiType ? '/api' : 'my_database'" />
+              <label class="form-label">{{ dialogApiType ? '基础路径' : '数据库名' }}</label>
+              <input v-model="form.databaseName" class="form-input" :placeholder="dialogApiType ? '/api' : 'my_database'" />
             </div>
             <div class="form-row">
               <div class="form-group flex-1">
@@ -105,10 +272,10 @@
               </div>
               <div class="form-group flex-1">
                 <label class="form-label">密码</label>
-                <input v-model="form.password" type="password" class="form-input" :placeholder="editingId ? '留空表示不修改' : '密码'" />
+                <input v-model="form.password" type="password" class="form-input" placeholder="留空表示不修改" />
               </div>
             </div>
-            <div v-if="isApiType" class="form-group">
+            <div v-if="dialogApiType" class="form-group">
               <label class="form-label">高级配置（JSON：headers / tables）</label>
               <textarea
                 v-model="form.extraConfig"
@@ -121,9 +288,9 @@
           </div>
           <div class="dialog-footer">
             <button class="btn-ghost" @click="closeDialog">取消</button>
-            <button class="btn-primary" @click="handleSubmit" :disabled="creating || extraConfigError">
+            <button class="btn-primary" @click="submitEdit" :disabled="creating || extraConfigError">
               <span v-if="creating">保存中...</span>
-              <span v-else>{{ editingId ? '保存' : '创建' }}</span>
+              <span v-else>保存</span>
             </button>
           </div>
         </div>
@@ -136,23 +303,41 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin, Sort, Grid
 } from '@element-plus/icons-vue'
 import { useDataSourceStore } from '../stores/datasourceStore'
-import { createDataSource, updateDataSource, deleteDataSource, testDataSource } from '../api/endpoints'
+import {
+  createDataSource, updateDataSource, deleteDataSource, testDataSource, getTables
+} from '../api/endpoints'
 
 const dsStore = useDataSourceStore()
 
+const STEP_LABELS = ['选择类型', '配置连接', '添加数据表']
+
+/** 0 = 列表；1/2/3 = 向导步骤 */
+const wizardStep = ref(0)
+const pickedType = ref(null)
+/** 第 3 步要配置表的数据源（新增时是刚创建的那条，从列表点进来则是既有那条） */
+const createdDs = ref(null)
+
 const showDialog = ref(false)
 const creating = ref(false)
+const savingTables = ref(false)
 const testingId = ref(null)
 const keyword = ref('')
 /** 最近一次测试连接成功的 id（仅页面内存态，不落库、刷新即清） */
 const testedOk = ref(new Set())
-/** 当前编辑的数据源 id；为空表示新增模式（新增/编辑共用一个对话框） */
+/** 当前编辑的数据源 id */
 const editingId = ref(null)
-/** 对话框绑定的引擎类型（由「添加数据源」下拉决定，表单内不切换类型） */
 const dialogType = ref({ code: 'mysql', displayName: 'MySQL', defaultPort: 3306 })
+
+// 第 3 步状态
+const tables = ref([])
+const tablesLoading = ref(false)
+const tablesError = ref('')
+const selectedTables = ref(new Set())
+const tableKeyword = ref('')
+const sortAsc = ref(true)
 
 const form = reactive({
   name: '',
@@ -174,6 +359,16 @@ const TYPE_COLORS = {
   graphql: '#9ca0a3'
 }
 
+// 卡片副文案（截图里是版本号，我们换成连接方式与默认端口）
+const TYPE_HINTS = {
+  mysql: '关系型数据库 · 3306',
+  postgresql: '关系型数据库 · 5432',
+  hive: 'HiveServer2 · 10000',
+  hdfs: 'WebHDFS 目录 · 9870',
+  rest: 'REST 接口',
+  graphql: 'GraphQL 接口'
+}
+
 // supported-types 拉取失败时的兜底清单（与后端注册的六类一致）
 const FALLBACK_TYPES = [
   { code: 'mysql', displayName: 'MySQL', defaultPort: 3306 },
@@ -184,8 +379,24 @@ const FALLBACK_TYPES = [
   { code: 'graphql', displayName: 'GraphQL', defaultPort: 80 }
 ]
 
+const TYPE_GROUPS = [
+  { title: '数据库', codes: ['mysql', 'postgresql'] },
+  { title: '大数据', codes: ['hive', 'hdfs'] },
+  { title: 'API', codes: ['rest', 'graphql'] }
+]
+
 const typeOptions = computed(() => (dsStore.supportedTypes.length ? dsStore.supportedTypes : FALLBACK_TYPES))
 const dataSources = computed(() => dsStore.dataSources)
+
+const typeGroups = computed(() =>
+  TYPE_GROUPS.map((g) => ({
+    title: g.title,
+    types: g.codes
+      .map((code) => typeOptions.value.find((t) => t.code === code))
+      .filter(Boolean)
+      .map((t) => ({ ...t, hint: TYPE_HINTS[t.code] || '' }))
+  })).filter((g) => g.types.length > 0)
+)
 
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -193,12 +404,29 @@ const filtered = computed(() => {
   return dataSources.value.filter((ds) => `${ds.name || ''} ${ds.type || ''}`.toLowerCase().includes(kw))
 })
 
-const isApiType = computed(() => dialogType.value.code === 'rest' || dialogType.value.code === 'graphql')
+const visibleTables = computed(() => {
+  const kw = tableKeyword.value.trim().toLowerCase()
+  const list = kw ? tables.value.filter((t) => (t.tableName || '').toLowerCase().includes(kw)) : [...tables.value]
+  return list.sort((a, b) => (sortAsc.value ? 1 : -1) * String(a.tableName).localeCompare(String(b.tableName)))
+})
+
+const allSelected = computed(() =>
+  visibleTables.value.length > 0 && visibleTables.value.every((t) => selectedTables.value.has(t.tableName))
+)
+
+const currentDbName = computed(() => createdDs.value?.databaseName || '默认库')
+
+/** 向导第 2 步按所选类型判断；编辑弹窗按 dialogType 判断 */
+const wizardApiType = computed(() => isApiTypeCode(pickedType.value?.code))
+const dialogApiType = computed(() => isApiTypeCode(dialogType.value.code))
+/** JSON 校验只针对当前正在编辑的表单，两个入口取或即可 */
+const formApiType = computed(() => wizardApiType.value || dialogApiType.value)
+
 const DEFAULT_USERNAMES = { mysql: 'root', postgresql: 'postgres' }
 const defaultUsername = computed(() => DEFAULT_USERNAMES[dialogType.value.code] || '')
 
 const extraConfigError = computed(() => {
-  if (!isApiType.value || !form.extraConfig.trim()) return false
+  if (!formApiType.value || !form.extraConfig.trim()) return false
   try {
     JSON.parse(form.extraConfig)
     return false
@@ -235,12 +463,18 @@ function relativeTime(value) {
   return `大约 ${Math.floor(hours / 24)} 天前`
 }
 
-function openCreateByCode(code) {
-  const t = typeOptions.value.find((item) => item.code === code) || FALLBACK_TYPES[0]
-  editingId.value = null
-  dialogType.value = t
+/* ---------------- 向导 ---------------- */
+
+function startWizard() {
+  pickedType.value = null
+  createdDs.value = null
+  wizardStep.value = 1
+}
+
+function pickType(t) {
+  pickedType.value = t
   Object.assign(form, {
-    name: `${t.displayName}数据源`,
+    name: '',
     host: 'localhost',
     port: t.defaultPort || 3306,
     databaseName: isApiTypeCode(t.code) ? '/api' : '',
@@ -248,8 +482,134 @@ function openCreateByCode(code) {
     password: '',
     extraConfig: ''
   })
-  showDialog.value = true
+  wizardStep.value = 2
 }
+
+/** 第 2 步提交：先落库，再进入选表步骤 */
+async function submitConnection() {
+  if (!form.host.trim()) {
+    ElMessage.warning('请填写主机')
+    return
+  }
+  creating.value = true
+  try {
+    const payload = {
+      // 名称留空时按类型自动生成
+      name: form.name.trim() || `${pickedType.value.displayName}数据源`,
+      type: pickedType.value.code,
+      host: form.host,
+      port: form.port,
+      databaseName: form.databaseName,
+      username: form.username,
+      password: form.password || '******',
+      extraConfig: isApiTypeCode(pickedType.value.code) ? form.extraConfig.trim() || null : null
+    }
+    const res = await createDataSource(payload)
+    createdDs.value = res.data
+    await dsStore.fetchDataSources()
+    selectedTables.value = new Set()
+    tableKeyword.value = ''
+    wizardStep.value = 3
+    await loadTables(createdDs.value.id)
+  } catch (e) {
+    // error handled by interceptor
+  } finally {
+    creating.value = false
+  }
+}
+
+/** 从列表的「配置数据表」进入第 3 步 */
+async function openTables(ds) {
+  createdDs.value = ds
+  pickedType.value = typeOptions.value.find((t) => t.code === ds.type) || null
+  selectedTables.value = new Set(readSelectedTables(ds))
+  tableKeyword.value = ''
+  sortAsc.value = true
+  wizardStep.value = 3
+  await loadTables(ds.id)
+}
+
+/** 已保存的表选择：存在 extra_config.selectedTables（后端会把它并入适配器配置，JDBC 侧忽略） */
+function readSelectedTables(ds) {
+  if (!ds.extraConfig) return []
+  try {
+    const parsed = JSON.parse(ds.extraConfig)
+    return Array.isArray(parsed.selectedTables) ? parsed.selectedTables : []
+  } catch {
+    return []
+  }
+}
+
+async function loadTables(datasourceId) {
+  tablesLoading.value = true
+  tablesError.value = ''
+  try {
+    const res = await getTables(datasourceId)
+    tables.value = res.data || []
+  } catch (e) {
+    tables.value = []
+    tablesError.value = '读取数据表失败，请确认连接配置是否正确'
+  } finally {
+    tablesLoading.value = false
+  }
+}
+
+function toggleTable(name, checked) {
+  const next = new Set(selectedTables.value)
+  if (checked) next.add(name)
+  else next.delete(name)
+  selectedTables.value = next
+}
+
+function toggleAll(checked) {
+  const next = new Set(selectedTables.value)
+  visibleTables.value.forEach((t) => (checked ? next.add(t.tableName) : next.delete(t.tableName)))
+  selectedTables.value = next
+}
+
+/** 保存表选择：写回 extra_config.selectedTables（保留其余配置键） */
+async function saveTables() {
+  const ds = createdDs.value
+  if (!ds) return
+  savingTables.value = true
+  try {
+    let extra = {}
+    if (ds.extraConfig) {
+      try {
+        extra = JSON.parse(ds.extraConfig) || {}
+      } catch {
+        extra = {}
+      }
+    }
+    extra.selectedTables = [...selectedTables.value]
+    await updateDataSource(ds.id, {
+      name: ds.name,
+      type: ds.type,
+      host: ds.host,
+      port: ds.port,
+      databaseName: ds.databaseName,
+      username: ds.username,
+      password: '******',
+      extraConfig: JSON.stringify(extra)
+    })
+    ElMessage.success('数据表已保存')
+    await dsStore.fetchDataSources()
+    finishWizard()
+  } catch (e) {
+    // error handled by interceptor
+  } finally {
+    savingTables.value = false
+  }
+}
+
+function finishWizard() {
+  wizardStep.value = 0
+  createdDs.value = null
+  pickedType.value = null
+  tables.value = []
+}
+
+/* ---------------- 编辑弹窗 ---------------- */
 
 function openEdit(row) {
   editingId.value = row.id
@@ -274,34 +634,25 @@ function closeDialog() {
   editingId.value = null
 }
 
-function buildPayload() {
-  return {
-    name: form.name,
-    type: dialogType.value.code,
-    host: form.host,
-    port: form.port,
-    databaseName: form.databaseName,
-    username: form.username,
-    password: form.password || '******',
-    extraConfig: isApiType.value ? form.extraConfig.trim() : null
-  }
-}
-
-async function handleSubmit() {
+async function submitEdit() {
   if (!form.name.trim() || !form.host.trim()) {
     ElMessage.warning('请填写名称与主机')
     return
   }
   creating.value = true
   try {
-    const payload = buildPayload()
-    if (editingId.value) {
-      await updateDataSource(editingId.value, payload)
-      ElMessage.success('数据源已更新')
-    } else {
-      await createDataSource(payload)
-      ElMessage.success('数据源创建成功')
+    const payload = {
+      name: form.name,
+      type: dialogType.value.code,
+      host: form.host,
+      port: form.port,
+      databaseName: form.databaseName,
+      username: form.username,
+      password: form.password || '******',
+      extraConfig: dialogApiType.value ? form.extraConfig.trim() : null
     }
+    await updateDataSource(editingId.value, payload)
+    ElMessage.success('数据源已更新')
     closeDialog()
     await dsStore.fetchDataSources()
   } catch (e) {
@@ -310,6 +661,8 @@ async function handleSubmit() {
     creating.value = false
   }
 }
+
+/* ---------------- 列表操作 ---------------- */
 
 async function handleTest(id) {
   testingId.value = id
@@ -464,6 +817,20 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+.type-icon.lg {
+  width: 44px;
+  height: 44px;
+  font-size: 19px;
+  border-radius: 11px;
+}
+
+.type-icon.xl {
+  width: 120px;
+  height: 120px;
+  border-radius: 28px;
+  font-size: 52px;
+}
+
 .card-name {
   flex: 1;
   min-width: 0;
@@ -563,6 +930,341 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
+/* ---- 向导骨架 ---- */
+.wizard {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 0 26px;
+}
+
+.step-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.step.current,
+.step.done {
+  color: var(--text);
+}
+
+.step-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step.current .step-dot,
+.step.done .step-dot {
+  background: var(--primary);
+  color: #fff;
+}
+
+.step-line {
+  width: 56px;
+  height: 1px;
+  background: var(--border);
+  margin: 0 10px;
+}
+
+.step-line.on {
+  background: var(--primary-light);
+}
+
+/* ---- 步骤 1：类型网格 ---- */
+.type-group {
+  margin-bottom: 22px;
+}
+
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.type-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.type-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.07);
+}
+
+.type-card.active {
+  border-color: var(--primary);
+}
+
+.type-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.type-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.type-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---- 步骤 2：连接表单 ---- */
+.connect-card {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 28px 32px;
+}
+
+.connect-illustration {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.illustration-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.connect-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* ---- 步骤 3：选表 ---- */
+.tables-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tables-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tables-note {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.tables-card {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  min-height: 420px;
+}
+
+.db-list {
+  border-right: 1px solid var(--border-light);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.db-item {
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.db-item.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.tables-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tab {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--primary);
+}
+
+.tables-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.tool-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tool-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tables-state {
+  padding: 60px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tables-state.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2px 16px;
+  padding: 4px 14px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.table-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.table-item:hover {
+  background: var(--surface-hover);
+}
+
+.table-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-comment {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tables-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-light);
+}
+
 /* ---- 按钮 ---- */
 .btn-primary {
   display: inline-flex;
@@ -596,14 +1298,19 @@ onMounted(() => {
 }
 
 .btn-ghost {
-  padding: 10px 20px;
+  padding: 9px 16px;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 14px;
+  font-size: 13.5px;
   cursor: pointer;
   transition: all var(--transition);
+}
+
+.btn-ghost.sm {
+  padding: 6px 12px;
+  font-size: 12.5px;
 }
 
 .btn-ghost:hover {
@@ -611,7 +1318,61 @@ onMounted(() => {
   border-color: #cbd5e1;
 }
 
-/* ---- Dialog ---- */
+/* ---- 表单 ---- */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.flex-1 { flex: 1; }
+.flex-2 { flex: 2; }
+
+.form-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-input {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  color: var(--text);
+  transition: all var(--transition);
+  outline: none;
+  background: var(--surface);
+}
+
+.form-textarea {
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--error);
+}
+
+/* ---- 编辑弹窗 ---- */
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -681,59 +1442,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-row {
-  display: flex;
-  gap: 16px;
-}
-
-.flex-1 { flex: 1; }
-.flex-2 { flex: 2; }
-
-.form-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.form-input {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-family: var(--font-sans);
-  color: var(--text);
-  transition: all var(--transition);
-  outline: none;
-  background: var(--surface);
-}
-
-.form-textarea {
-  resize: vertical;
-  font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.form-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
-}
-
-.form-input::placeholder {
-  color: var(--text-muted);
-}
-
-.field-error {
-  font-size: 12px;
-  color: var(--error);
 }
 
 .dialog-footer {
