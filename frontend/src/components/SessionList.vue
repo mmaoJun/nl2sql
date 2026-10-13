@@ -212,7 +212,7 @@ async function onRemove(session) {
 
 .session-item {
   position: relative;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 2px;
@@ -257,7 +257,7 @@ async function onRemove(session) {
   min-width: 0;
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,14 +267,14 @@ async function onRemove(session) {
 .session-meta {
   flex-shrink: 0;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .session-preview {
   font-size: 11.5px;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -302,6 +302,7 @@ async function onRemove(session) {
   border-radius: 4px;
   display: flex;
   align-items: center;
+  transition: all var(--transition);
 }
 
 .action-btn:hover {
@@ -387,5 +388,13 @@ async function onRemove(session) {
   color: var(--error);
   border-color: var(--error);
   background: var(--error-bg);
+}
+
+/* 键盘可达性：新的按钮保持一致的 focus 视觉 */
+.new-session-btn:focus-visible,
+.footer-btn:focus-visible,
+.logout-btn:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 1px;
 }
 </style>
