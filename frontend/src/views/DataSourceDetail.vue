@@ -42,10 +42,15 @@
       <!-- ============ 左栏：导航 + 搜索 + 数据源 → 表 树 ============ -->
       <aside class="detail-rail">
         <div class="rail-nav">
-          <span class="rail-nav-item active">
+          <button
+            type="button"
+            class="rail-nav-item"
+            :class="{ active: !selectedTable }"
+            @click="selectDatabase"
+          >
             <el-icon :size="14"><InfoFilled /></el-icon>
             <span>基本信息</span>
-          </span>
+          </button>
         </div>
 
         <div class="rail-search">
@@ -54,13 +59,18 @@
         </div>
 
         <div class="rail-tree">
-          <div class="tree-root">
+          <button
+            type="button"
+            class="tree-root"
+            :class="{ active: !selectedTable }"
+            @click="selectDatabase"
+          >
             <svg v-if="brandOf(ds.type)" class="tree-logo" :viewBox="brandOf(ds.type).viewBox" fill="currentColor" aria-hidden="true">
               <path :d="brandOf(ds.type).path" />
             </svg>
             <span class="tree-root-name">{{ ds.databaseName || ds.name }}</span>
             <span class="tree-count">{{ tables.length }}</span>
-          </div>
+          </button>
           <div class="tree-tables">
             <button
               v-for="t in filteredTables"
@@ -296,6 +306,12 @@ async function openPreview() {
   } finally {
     previewLoading.value = false
   }
+}
+
+/** 回到库级视图（基本信息）：清掉当前表选择，右栏切回表清单 */
+function selectDatabase() {
+  selectedTable.value = null
+  expanded.value = new Set()
 }
 
 function selectTable(tableName) {
@@ -545,10 +561,21 @@ watch(() => props.datasourceId, () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 7px 10px;
+  border: none;
   border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-sans);
   font-size: 13px;
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.rail-nav-item:hover {
+  background: var(--primary-bg);
 }
 
 .rail-nav-item.active {
@@ -593,12 +620,27 @@ watch(() => props.datasourceId, () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 7px 10px;
+  border: none;
   border-radius: var(--radius);
   background: var(--surface-hover);
+  text-align: left;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.tree-root:hover,
+.tree-root.active {
+  background: var(--primary-bg);
+}
+
+.tree-root.active {
+  color: var(--primary);
 }
 
 .tree-logo {
