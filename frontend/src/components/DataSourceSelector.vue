@@ -46,9 +46,11 @@ defineEmits(['update:modelValue'])
 }
 
 .ds-selector :deep(.el-input__wrapper) {
-  border-radius: var(--radius);
+  height: 36px;
+  border-radius: 10px;
   box-shadow: none;
   border: 1px solid var(--border);
+  background: var(--surface);
   padding-left: 8px;
   transition: all var(--transition);
 }

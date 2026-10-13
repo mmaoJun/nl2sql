@@ -1,9 +1,20 @@
 <template>
   <div class="session-list">
+    <!-- 顶部：唯一控件——数据源选择（全宽浅底圆角，对应参考图顶部选择框） -->
+    <div class="sidebar-top">
+      <DataSourceSelector
+        :model-value="dsId"
+        :data-sources="dataSources"
+        @update:model-value="$emit('update:dsId', $event)"
+      />
+    </div>
+
     <button class="new-session-btn" @click="$emit('create')">
       <el-icon :size="15"><Plus /></el-icon>
-      <span>新建对话</span>
+      <span>新对话</span>
     </button>
+
+    <div class="session-section-title">最近对话</div>
 
     <div class="session-items" v-loading="loading">
       <div v-if="!loading && sessions.length === 0" class="session-empty">
@@ -17,12 +28,11 @@
         @click="$emit('select', s.id)"
       >
         <div class="session-main">
-          <span class="session-title">{{ s.title || '新对话' }}</span>
+          <div class="session-title-row">
+            <span class="session-title">{{ s.title || '新对话' }}</span>
+            <span class="session-meta">{{ metaText(s) }}</span>
+          </div>
           <span v-if="s.preview" class="session-preview">{{ s.preview }}</span>
-        </div>
-        <div class="session-meta">
-          <span>{{ formatTime(s.updatedAt) }}</span>
-          <span>{{ s.turnCount || 0 }} 轮</span>
         </div>
         <div class="session-actions" @click.stop>
           <button class="action-btn" title="重命名" @click="onRename(s)">
@@ -38,23 +48,13 @@
     <div class="session-footer">
       <div class="user-avatar">{{ username.charAt(0).toUpperCase() || '?' }}</div>
       <span class="user-name">{{ username || '未登录' }}</span>
-      <el-popover placement="top-start" :width="160" trigger="click">
-        <template #reference>
-          <button class="settings-btn" title="设置">
-            <el-icon :size="16"><Setting /></el-icon>
-          </button>
-        </template>
-        <div class="popover-menu">
-          <button class="popover-item" @click="goSettings">
-            <el-icon :size="15"><Setting /></el-icon>
-            <span>数据源管理</span>
-          </button>
-          <button class="popover-item danger" @click="logout">
-            <el-icon :size="15"><SwitchButton /></el-icon>
-            <span>退出登录</span>
-          </button>
-        </div>
-      </el-popover>
+      <button class="footer-btn" title="设置" @click="goSettings">
+        <el-icon :size="16"><Setting /></el-icon>
+      </button>
+      <button class="logout-btn" title="退出登录" @click="logout">
+        <el-icon :size="13"><SwitchButton /></el-icon>
+        <span>退出</span>
+      </button>
     </div>
   </div>
 </template>
@@ -64,16 +64,20 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Plus, EditPen, Delete, Setting, SwitchButton } from '@element-plus/icons-vue'
+import DataSourceSelector from './DataSourceSelector.vue'
 
 const router = useRouter()
 
 defineProps({
   sessions: { type: Array, default: () => [] },
   currentId: { type: Number, default: null },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  // 数据源选择迁入侧栏后由本组件承载 v-model（接口与原 header 处保持一致）
+  dsId: { type: [Number, null], default: null },
+  dataSources: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['create', 'select', 'rename', 'remove'])
+const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:dsId'])
 
 const username = ref('')
 watch(() => router.currentRoute.value.path, () => {
@@ -104,6 +108,14 @@ function formatTime(value) {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   }
   return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+// 时间与轮数合并成标题行右侧的一枚小灰字，保证会话行紧凑（改为两行结构后
+// 行高约 36–48px）；两段信息都保留，只是排版位置调整
+function metaText(session) {
+  const time = formatTime(session.updatedAt)
+  const turns = `${session.turnCount || 0} 轮`
+  return time ? `${time} · ${turns}` : turns
 }
 
 async function onRename(session) {
@@ -141,19 +153,27 @@ async function onRemove(session) {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-light);
-  background: var(--surface);
+  background: var(--surface-hover);
   min-height: 0;
 }
 
+/* ---- 顶部：数据源选择（全宽，唯一控件） ---- */
+.sidebar-top {
+  padding: 12px 12px 2px;
+  flex-shrink: 0;
+}
+
+/* ---- 中部：新对话 + 最近对话 ---- */
 .new-session-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 12px;
-  padding: 9px 12px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 0 10px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
@@ -162,15 +182,24 @@ async function onRemove(session) {
 }
 
 .new-session-btn:hover {
-  border-color: var(--primary-light);
-  color: var(--primary);
   background: var(--primary-bg);
+  color: var(--primary);
+}
+
+.session-section-title {
+  padding: 14px 18px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  user-select: none;
+  flex-shrink: 0;
 }
 
 .session-items {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 12px;
+  padding: 0 8px 10px;
   min-height: 120px;
 }
 
@@ -183,18 +212,20 @@ async function onRemove(session) {
 
 .session-item {
   position: relative;
-  padding: 9px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 2px;
+  min-height: 36px;
   transition: background var(--transition);
 }
 
 .session-item:hover {
-  background: var(--surface-hover);
+  background: var(--bg);
 }
 
-.session-item.active {
+.session-item.active,
+.session-item.active:hover {
   background: var(--primary-bg);
 }
 
@@ -202,36 +233,52 @@ async function onRemove(session) {
   color: var(--primary);
 }
 
+/* 悬浮操作占住右上角，此时把同位置的 meta 小灰字藏掉避免叠字 */
+.session-item:hover .session-meta {
+  visibility: hidden;
+}
+
 .session-main {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
+  min-width: 0;
+}
+
+.session-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .session-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.4;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.session-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .session-preview {
   font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.session-meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .session-actions {
@@ -258,7 +305,7 @@ async function onRemove(session) {
 }
 
 .action-btn:hover {
-  background: var(--border-light);
+  background: var(--border);
   color: var(--text);
 }
 
@@ -267,19 +314,21 @@ async function onRemove(session) {
   color: var(--error);
 }
 
+/* ---- 底部：登录信息 + 设置 / 退出 ---- */
 .session-footer {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid var(--border-light);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .user-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -300,51 +349,43 @@ async function onRemove(session) {
   min-width: 0;
 }
 
-.settings-btn {
+.footer-btn {
   border: none;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
+  padding: 5px;
   border-radius: 6px;
   display: flex;
   align-items: center;
-  transition: all 0.15s ease;
+  justify-content: center;
+  transition: all var(--transition);
+  flex-shrink: 0;
 }
 
-.settings-btn:hover {
-  background: var(--surface-hover);
+.footer-btn:hover {
+  background: var(--bg);
   color: var(--text);
 }
 
-.popover-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.popover-item {
+.logout-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12.5px;
   cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.15s ease;
-  width: 100%;
-  text-align: left;
+  transition: all var(--transition);
+  flex-shrink: 0;
 }
 
-.popover-item:hover {
-  background: var(--surface-hover);
-}
-
-.popover-item.danger:hover {
-  background: var(--error-bg);
+.logout-btn:hover {
   color: var(--error);
+  border-color: var(--error);
+  background: var(--error-bg);
 }
 </style>

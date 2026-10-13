@@ -1,9 +1,11 @@
 <template>
   <div class="chat-page">
     <SessionList
+      v-model:dsId="selectedDsId"
       :sessions="sessionStore.sessions"
       :current-id="sessionStore.currentSessionId"
       :loading="sessionStore.loading"
+      :data-sources="dsStore.dataSources"
       @create="handleCreateSession"
       @select="handleSelectSession"
       @rename="handleRenameSession"
@@ -12,16 +14,9 @@
 
     <div class="chat-main">
     <div class="chat-header">
-      <div class="header-left">
-        <el-icon :size="18" color="var(--primary)"><Connection /></el-icon>
-        <DataSourceSelector
-          v-model="selectedDsId"
-          :data-sources="dsStore.dataSources"
-        />
-        <!-- 模型由后端 nl2sql.model.provider 配置决定，无按请求切换接口：ModelSelector 隐藏，
-             原位换成表结构入口（SchemaExplorer 走 /api/v1/metadata） -->
-        <el-button size="small" text :icon="Grid" @click="schemaVisible = true">表结构</el-button>
-      </div>
+      <!-- 数据源选择已迁入侧栏顶部；此处只保留表结构入口（SchemaExplorer 走 /api/v1/metadata）。
+           模型由后端 nl2sql.model.provider 配置决定，无按请求切换接口，ModelSelector 隐藏 -->
+      <el-button size="small" text :icon="Grid" @click="schemaVisible = true">表结构</el-button>
     </div>
 
     <div v-if="loadError" class="load-error">
@@ -101,7 +96,6 @@ import ChatInput from '../components/ChatInput.vue'
 import ChatMessage from '../components/ChatMessage.vue'
 import ResultTable from '../components/ResultTable.vue'
 import TracePanel from '../components/TracePanel.vue'
-import DataSourceSelector from '../components/DataSourceSelector.vue'
 import SchemaExplorer from '../components/SchemaExplorer.vue'
 import SessionList from '../components/SessionList.vue'
 
@@ -270,18 +264,11 @@ onMounted(async () => {
 .chat-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
+  padding: 8px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   z-index: 1;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .load-error {
