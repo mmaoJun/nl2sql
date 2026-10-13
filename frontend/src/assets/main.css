@@ -68,7 +68,7 @@ html, body, #app {
 .message-bubble {
   max-width: 85%;
   margin-bottom: 0;
-  padding: 12px 16px;
+  padding: 8px 13px;
   border-radius: 14px;
   line-height: 1.7;
   font-size: 14px;
