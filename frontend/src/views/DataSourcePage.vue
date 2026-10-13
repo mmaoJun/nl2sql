@@ -148,7 +148,7 @@
           <div class="connect-form">
             <div class="form-group">
               <label class="form-label">数据源名称</label>
-              <input v-model="form.name" class="form-input" placeholder="输入数据源名称，留空将自动生成" />
+              <input v-model="form.name" class="form-input" placeholder="输入数据源名称，留空则使用数据库名称" />
             </div>
             <div class="form-row">
               <div class="form-group flex-1">
@@ -465,9 +465,13 @@ async function submitConnection() {
   }
   creating.value = true
   try {
+    // 名称留空时用数据库名兜底；API 类型那栏填的是基础路径（如 /api），
+    // 拿来当名字不可读，仍按类型名生成
+    const fallbackName = isApiTypeCode(pickedType.value.code)
+      ? `${pickedType.value.displayName}数据源`
+      : form.databaseName.trim()
     await createDataSource({
-      // 名称留空时按类型自动生成
-      name: form.name.trim() || `${pickedType.value.displayName}数据源`,
+      name: form.name.trim() || fallbackName,
       type: pickedType.value.code,
       host: form.host,
       port: form.port,
@@ -724,11 +728,13 @@ onMounted(async () => {
   border-radius: 11px;
 }
 
+/* 连接步骤的大 logo：去掉描边框、整体放大，让品牌标识更突出 */
 .type-icon.xl {
-  width: 120px;
-  height: 120px;
-  border-radius: 28px;
-  font-size: 64px;
+  width: 132px;
+  height: 132px;
+  border: none;
+  border-radius: 32px;
+  font-size: 76px;
 }
 
 .card-name {
