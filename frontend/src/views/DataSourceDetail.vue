@@ -179,29 +179,45 @@
             <div v-if="columns.length === 0 && !columnsLoading" class="columns-empty">没有读到字段信息</div>
           </div>
 
-          <!-- 数据预览 -->
-          <div v-else class="preview-panel" v-loading="previewLoading">
+          <!-- 数据预览：整块装进带边框的容器，50 条/页，底部页码 -->
+          <div v-else class="preview-panel">
             <template v-if="preview && preview.success">
-              <div class="preview-meta">
-                <span>前 {{ preview.rows?.length || 0 }} 行</span>
-                <span class="preview-cost">耗时 {{ preview.executionTimeMs }} ms</span>
+              <div class="preview-box">
+                <div class="preview-table" v-loading="previewLoading">
+                  <el-table :data="preview.rows" size="small" max-height="460" style="width: 100%">
+                    <el-table-column type="index" label="#" width="48" align="center" />
+                    <el-table-column
+                      v-for="c in preview.columns"
+                      :key="c"
+                      :prop="c"
+                      :label="c"
+                      min-width="150"
+                      show-overflow-tooltip
+                    />
+                  </el-table>
+                </div>
+                <div class="preview-footer">
+                  <span class="preview-range">
+                    {{ rangeStart }}-{{ rangeEnd }} / 共 {{ previewTotal }} 条
+                    <span class="preview-cost">耗时 {{ preview.executionTimeMs }} ms</span>
+                  </span>
+                  <el-pagination
+                    small
+                    background
+                    layout="prev, pager, next"
+                    :current-page="preview.page"
+                    :page-size="PREVIEW_PAGE_SIZE"
+                    :total="previewTotal"
+                    @current-change="changePreviewPage"
+                  />
+                </div>
               </div>
-              <el-table :data="preview.rows" size="small" max-height="460" style="width: 100%">
-                <el-table-column type="index" label="#" width="48" align="center" />
-                <el-table-column
-                  v-for="c in preview.columns"
-                  :key="c"
-                  :prop="c"
-                  :label="c"
-                  min-width="150"
-                  show-overflow-tooltip
-                />
-              </el-table>
             </template>
             <div v-else-if="preview && !preview.success" class="preview-error">
               {{ preview.errorMessage || '预览失败' }}
             </div>
-            <div v-else-if="!previewLoading" class="columns-empty">暂无数据</div>
+            <div v-else-if="previewLoading" class="preview-box preview-loading" v-loading="true"></div>
+            <div v-else class="columns-empty">暂无数据</div>
           </div>
         </template>
       </section>
@@ -261,12 +277,23 @@ const selectedTableComment = computed(
 /* ---------------- 列信息 / 预览：按表懒加载 + 本地缓存 ---------------- */
 
 const columnCache = reactive({})
-const previewCache = reactive({})
 const columnsLoading = ref(false)
-const previewLoading = ref(false)
 
 const columns = computed(() => columnCache[selectedTable.value] || [])
-const preview = computed(() => previewCache[selectedTable.value] || null)
+
+/* 预览分页：每页 50 条，总行数由后端 COUNT(*) 带出；状态按表保留，切表再切回不重拉 */
+const PREVIEW_PAGE_SIZE = 50
+const previewState = reactive({})
+const previewLoading = ref(false)
+
+const preview = computed(() => previewState[selectedTable.value] || null)
+const previewTotal = computed(() => preview.value?.total || 0)
+const rangeStart = computed(() =>
+  previewTotal.value === 0 ? 0 : (preview.value.page - 1) * PREVIEW_PAGE_SIZE + 1
+)
+const rangeEnd = computed(
+  () => (preview.value.page - 1) * PREVIEW_PAGE_SIZE + (preview.value.rows?.length || 0)
+)
 
 /** 展开的列（看数据类型/可空/默认值） */
 const expanded = ref(new Set())
@@ -293,19 +320,43 @@ async function ensureColumns() {
   }
 }
 
-async function openPreview() {
-  tab.value = 'preview'
-  const table = selectedTable.value
-  if (!table || previewCache[table]) return
+async function loadPreview(table, page) {
   previewLoading.value = true
   try {
-    const res = await getTablePreview(props.datasourceId, table, 20)
-    previewCache[table] = res.data || { success: false, errorMessage: '预览返回为空' }
+    // 拦截器返回 {code,message,data} 信封；data.total 是整表行数，
+    // 旧后端没有该字段时退化为本页行数（分页退化成单页，不报错）
+    const res = await getTablePreview(props.datasourceId, table, page, PREVIEW_PAGE_SIZE)
+    const data = res.data
+    if (data && data.success) {
+      previewState[table] = {
+        page,
+        total: typeof data.total === 'number' ? data.total : (data.rows?.length || 0),
+        rows: data.rows || [],
+        columns: data.columns || [],
+        executionTimeMs: data.executionTimeMs,
+        success: true
+      }
+    } else {
+      previewState[table] = { page, success: false, errorMessage: data?.errorMessage || '预览失败' }
+    }
   } catch (e) {
-    previewCache[table] = { success: false, errorMessage: '预览请求失败' }
+    previewState[table] = { page, success: false, errorMessage: '预览请求失败' }
   } finally {
     previewLoading.value = false
   }
+}
+
+function openPreview() {
+  tab.value = 'preview'
+  const table = selectedTable.value
+  if (!table || previewState[table]) return
+  loadPreview(table, 1)
+}
+
+function changePreviewPage(page) {
+  const table = selectedTable.value
+  if (!table) return
+  loadPreview(table, page)
 }
 
 /** 回到库级视图（基本信息）：清掉当前表选择，右栏切回表清单 */
@@ -361,9 +412,12 @@ async function handleRefresh() {
   try {
     await refreshMetadata(props.datasourceId)
     Object.keys(columnCache).forEach((k) => delete columnCache[k])
-    Object.keys(previewCache).forEach((k) => delete previewCache[k])
+    Object.keys(previewState).forEach((k) => delete previewState[k])
     await loadTables()
-    if (selectedTable.value) await ensureColumns()
+    if (selectedTable.value) {
+      await ensureColumns()
+      if (tab.value === 'preview') await loadPreview(selectedTable.value, 1)
+    }
     ElMessage.success('表结构已重新同步')
   } catch (e) {
     // 拦截器已提示
@@ -394,7 +448,7 @@ watch(() => props.datasourceId, () => {
   keyword.value = ''
   expanded.value = new Set()
   Object.keys(columnCache).forEach((k) => delete columnCache[k])
-  Object.keys(previewCache).forEach((k) => delete previewCache[k])
+  Object.keys(previewState).forEach((k) => delete previewState[k])
   loadTables()
 })
 </script>
@@ -1011,22 +1065,43 @@ watch(() => props.datasourceId, () => {
   color: var(--text-muted);
 }
 
-/* ---- 数据预览 ---- */
+/* ---- 数据预览：带边框容器 + 底部分页 ---- */
 .preview-panel {
   padding-top: 14px;
   min-height: 120px;
 }
 
-.preview-meta {
+.preview-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.preview-table {
+  min-height: 120px;
+}
+
+.preview-loading {
+  min-height: 200px;
+}
+
+.preview-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface);
+}
+
+.preview-range {
   font-size: 12.5px;
   color: var(--text-secondary);
 }
 
 .preview-cost {
+  margin-left: 10px;
   color: var(--text-muted);
 }
 
