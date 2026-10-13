@@ -36,7 +36,7 @@
           title="发送"
           @click="handleSend"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="19" x2="12" y2="6"/>
             <polyline points="6 12 12 6 18 12"/>
           </svg>
@@ -74,12 +74,16 @@ let noticeTimer = null
 
 const MAX_HEIGHT = 200
 
-// 高度跟随内容：先归零再量 scrollHeight，封顶后由 textarea 自己滚动
+// 高度跟随内容：先归零再量 scrollHeight，封顶后由 textarea 自己滚动。
+// overflow 只在真的超出上限时打开——否则定高与 scrollHeight 的取整差会
+// 让空框右侧多出一条滚动条（视觉上像按钮边上多了个竖条）
 function autoResize() {
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
+  const overflow = el.scrollHeight > MAX_HEIGHT
   el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
+  el.style.overflowY = overflow ? 'auto' : 'hidden'
 }
 
 watch(inputText, () => nextTick(autoResize))
@@ -120,7 +124,7 @@ watch(() => props.loading, (value) => {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 12px 54px 12px 16px;
+  padding: 12px 48px 12px 16px;
   transition: border-color var(--transition), box-shadow var(--transition);
   box-shadow: var(--shadow-sm);
 }
@@ -145,7 +149,7 @@ watch(() => props.loading, (value) => {
   padding: 0;
   min-height: 22px;
   max-height: 200px;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 .input-textarea::placeholder {
@@ -185,13 +189,13 @@ watch(() => props.loading, (value) => {
 
 .input-container.has-footer .input-actions {
   top: auto;
-  bottom: 10px;
+  bottom: 12px;
   transform: none;
 }
 
 .send-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: none;
   background: #e8e8ea;
@@ -221,8 +225,8 @@ watch(() => props.loading, (value) => {
 }
 
 .stop-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid var(--el-color-danger-light-5);
   background: var(--el-color-danger-light-9);
