@@ -12,12 +12,6 @@
     />
 
     <div class="chat-main">
-    <div class="chat-header">
-      <!-- 表结构入口（SchemaExplorer 走 /api/v1/metadata）；
-           模型由后端 nl2sql.model.provider 配置决定，无按请求切换接口，ModelSelector 隐藏 -->
-      <el-button size="small" text :icon="Grid" @click="schemaVisible = true">表结构</el-button>
-    </div>
-
     <div v-if="loadError" class="load-error">
       <span>历史消息加载失败</span>
       <button class="retry-btn" @click="reloadAfterFailure">重试</button>
@@ -108,16 +102,11 @@
     </div>
     </template>
     </div>
-
-    <el-drawer v-model="schemaVisible" title="表结构浏览" size="440px">
-      <SchemaExplorer :datasource-id="selectedDsId" />
-    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
-import { Grid } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -125,7 +114,6 @@ import ChatInput from '../components/ChatInput.vue'
 import ChatMessage from '../components/ChatMessage.vue'
 import ResultTable from '../components/ResultTable.vue'
 import TracePanel from '../components/TracePanel.vue'
-import SchemaExplorer from '../components/SchemaExplorer.vue'
 import SessionList from '../components/SessionList.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
 
@@ -135,7 +123,6 @@ const sessionStore = useSessionStore()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
-const schemaVisible = ref(false)
 // 欢迎页问候语用（与侧栏同源，读 localStorage 的登录名）
 const username = ref(localStorage.getItem('username') || '')
 // 首屏 / 切会话的历史加载中（骨架屏），与 chatStore.loading（生成中）分开
@@ -298,16 +285,6 @@ onMounted(async () => {
   min-width: 0;
   height: 100%;
   background: var(--surface);
-}
-
-/* 顶栏只留表结构入口，靠右、无边框，主区域保持留白（参照截图） */
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 10px 20px 0;
-  background: transparent;
-  z-index: 1;
 }
 
 .load-error {

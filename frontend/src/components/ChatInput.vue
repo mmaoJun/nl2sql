@@ -37,8 +37,8 @@
           @click="handleSend"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            <line x1="12" y1="19" x2="12" y2="6"/>
+            <polyline points="6 12 12 6 18 12"/>
           </svg>
         </button>
       </div>
@@ -120,7 +120,7 @@ watch(() => props.loading, (value) => {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 11px 52px 11px 16px;
+  padding: 12px 54px 12px 16px;
   transition: border-color var(--transition), box-shadow var(--transition);
   box-shadow: var(--shadow-sm);
 }
@@ -181,9 +181,9 @@ watch(() => props.loading, (value) => {
 }
 
 .send-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   border: none;
   background: #e8e8ea;
   color: #9ca3af;
@@ -212,9 +212,9 @@ watch(() => props.loading, (value) => {
 }
 
 .stop-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   border: 1px solid var(--el-color-danger-light-5);
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
