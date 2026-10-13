@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   getSessions,
-  createSession,
   getSessionTurns,
   renameSession,
   deleteSession
@@ -43,7 +42,7 @@ export const useSessionStore = defineStore('session', () => {
    * 结果就是后端不可用时"加载失败 + 重试"入口反而不出现 —— 用户看到的是一片空白。
    * 列表内容保持原样不清空：一次网络抖动不该把用户眼前的会话列表抹掉。
    *
-   * 与 startSession/rename/remove/loadTurns 不同，那几个的调用方需要知道成败，照常抛。
+   * 与 rename/remove/loadTurns 不同，那几个的调用方需要知道成败，照常抛。
    */
   async function fetchSessions() {
     loading.value = true
@@ -55,13 +54,6 @@ export const useSessionStore = defineStore('session', () => {
     } finally {
       loading.value = false
     }
-  }
-
-  async function startSession(datasourceId) {
-    const res = await createSession({ datasourceId })
-    sessions.value.unshift(res.data)
-    setCurrent(res.data.id)
-    return res.data
   }
 
   async function rename(id, title) {
@@ -87,7 +79,6 @@ export const useSessionStore = defineStore('session', () => {
     currentSessionId,
     loading,
     fetchSessions,
-    startSession,
     rename,
     remove,
     loadTurns,

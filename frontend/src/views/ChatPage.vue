@@ -23,6 +23,7 @@
       <div class="welcome-input">
         <ChatInput
           hide-hint
+          :placeholder="selectedDsId ? '想查什么，一问即得' : '请先选择数据源'"
           :disabled="chatStore.loading || !selectedDsId"
           :loading="chatStore.loading"
           @send="handleSend"
@@ -34,6 +35,7 @@
             label="数据源"
             :data-sources="dsStore.dataSources"
           />
+          <span v-if="!selectedDsId" class="welcome-prompt">选择数据源后才能开始提问</span>
         </div>
       </div>
       <div class="welcome-examples">
@@ -145,11 +147,12 @@ function fillQuery(q) {
   handleSend(q)
 }
 
-async function handleCreateSession() {
-  // 新建走 POST /api/v1/sessions（会话侧栏五端点之一），拿到会话后再提问即带 sessionId
-  await sessionStore.startSession(selectedDsId.value)
+function handleCreateSession() {
+  // 新建对话数据源回到"未选择"（先选源再提问）；会话不预建，首问由后端自动创建
+  // 并在 FINAL 里回填 sessionId（T11 契约，见 handleSend 注释），避免产生空会话
   chatStore.clearMessages()
   loadError.value = false
+  selectedDsId.value = null
 }
 
 async function handleSelectSession(id) {
@@ -257,10 +260,8 @@ const messagesDigest = computed(() => chatStore.messages
 watch(messagesDigest, scrollToBottom)
 
 onMounted(async () => {
+  // 数据源不默认选中：由用户在欢迎页显式选择（未选时输入与发送保持禁用）
   await Promise.all([dsStore.fetchDataSources(), dsStore.fetchSupportedTypes()])
-  if (dsStore.dataSources.length > 0) {
-    selectedDsId.value = dsStore.dataSources[0].id
-  }
   await sessionStore.fetchSessions()
   await restoreSession(sessionStore.currentSessionId)
 })
@@ -367,6 +368,12 @@ onMounted(async () => {
   gap: 2px;
   margin-top: 2px;
   padding-left: 2px;
+}
+
+.welcome-prompt {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-left: 2px;
 }
 
 /* 输入框左下的数据源 chip：胶囊样式在组件内定义，这里只做定位约束 */

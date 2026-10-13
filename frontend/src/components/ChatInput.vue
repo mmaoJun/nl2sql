@@ -6,7 +6,7 @@
         ref="textareaRef"
         v-model="inputText"
         class="input-textarea"
-        placeholder="想查什么，一问即得"
+        :placeholder="placeholder"
         :disabled="disabled"
         rows="1"
         @input="autoResize"
@@ -61,7 +61,9 @@ const props = defineProps({
   // 不然流式回答期间底部提示会错报成"请先选择数据源"（T12 实测发现）
   loading: Boolean,
   // 欢迎页不需要底部提示行（选源入口就在下方，快捷键提示也多余）
-  hideHint: Boolean
+  hideHint: Boolean,
+  // 未选数据源时由上层换成提示文案（"请先选择数据源"），选中后回默认
+  placeholder: { type: String, default: '想查什么，一问即得' }
 })
 
 const emit = defineEmits(['send', 'stop'])
