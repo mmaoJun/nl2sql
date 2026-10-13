@@ -75,13 +75,18 @@
         @send="handleSend"
         @stop="handleStop"
       >
-        <!-- 数据源选择放在输入框正下方（原侧栏顶部位置已让给「数据源管理」入口） -->
+        <!-- 数据源选择放在输入框正下方（原侧栏顶部位置已让给「数据源管理」入口）；
+             类型制选择：下拉列引擎类型，选中即用该类型已配置的连接 -->
         <template #below-input>
           <div class="ds-picker">
             <DataSourceSelector
               v-model="selectedDsId"
               :data-sources="dsStore.dataSources"
+              :supported-types="dsStore.supportedTypes"
             />
+            <button class="ds-manage-link" title="数据源管理" @click="router.push('/datasources')">
+              <el-icon :size="15"><Setting /></el-icon>
+            </button>
           </div>
         </template>
       </ChatInput>
@@ -96,7 +101,8 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
-import { Grid } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Grid, Setting } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -111,6 +117,7 @@ import DataSourceSelector from '../components/DataSourceSelector.vue'
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
 const sessionStore = useSessionStore()
+const router = useRouter()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
@@ -242,7 +249,7 @@ const messagesDigest = computed(() => chatStore.messages
 watch(messagesDigest, scrollToBottom)
 
 onMounted(async () => {
-  await dsStore.fetchDataSources()
+  await Promise.all([dsStore.fetchDataSources(), dsStore.fetchSupportedTypes()])
   if (dsStore.dataSources.length > 0) {
     selectedDsId.value = dsStore.dataSources[0].id
   }
@@ -422,8 +429,37 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 
-/* 输入框下方的数据源选择器：固定宽度靠左，不遮挡居中的提示文字 */
+/* 输入框下方的数据源选择行：类型选择器靠左 + 管理页快捷入口 */
 .ds-picker {
-  width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 280px;
+}
+
+.ds-picker .ds-selector {
+  flex: 1;
+  min-width: 0;
+}
+
+.ds-manage-link {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.ds-manage-link:hover {
+  color: var(--primary);
+  border-color: var(--primary-light);
+  background: var(--primary-bg);
 }
 </style>
