@@ -28,23 +28,18 @@
       <h2 class="welcome-title">Hi {{ username || '朋友' }}，有什么可以帮你的？</h2>
       <div class="welcome-input">
         <ChatInput
+          hide-hint
           :disabled="chatStore.loading || !selectedDsId"
           :loading="chatStore.loading"
           @send="handleSend"
           @stop="handleStop"
         />
         <div class="welcome-selectors">
-          <div class="ds-inline">
-            <DataSourceSelector
-              v-model="selectedDsId"
-              :data-sources="dsStore.dataSources"
-              :supported-types="dsStore.supportedTypes"
-            />
-          </div>
-          <button class="welcome-manage" @click="goManage">
-            <el-icon :size="14"><Setting /></el-icon>
-            <span>管理</span>
-          </button>
+          <DataSourceSelector
+            v-model="selectedDsId"
+            label="数据源"
+            :data-sources="dsStore.dataSources"
+          />
         </div>
       </div>
       <div class="welcome-examples">
@@ -98,14 +93,14 @@
         @send="handleSend"
         @stop="handleStop"
       >
-        <!-- 对话开始后输入框左下显示当前数据源 chip（可点击切换类型）；
+        <!-- 对话开始后输入框左下显示当前数据源 chip（可点击切换）；
              开新对话前的选择入口在欢迎页输入框下方 -->
         <template #footer-left>
           <div class="ds-chip">
             <DataSourceSelector
               v-model="selectedDsId"
+              variant="chip"
               :data-sources="dsStore.dataSources"
-              :supported-types="dsStore.supportedTypes"
             />
           </div>
         </template>
@@ -122,8 +117,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Grid, Setting } from '@element-plus/icons-vue'
+import { Grid } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -138,7 +132,6 @@ import DataSourceSelector from '../components/DataSourceSelector.vue'
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
 const sessionStore = useSessionStore()
-const router = useRouter()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
@@ -163,10 +156,6 @@ const exampleQueries = [
 
 function fillQuery(q) {
   handleSend(q)
-}
-
-function goManage() {
-  router.push('/datasources')
 }
 
 async function handleCreateSession() {
@@ -398,56 +387,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 6px;
-  padding-left: 4px;
+  margin-top: 2px;
+  padding-left: 2px;
 }
 
-/* 框下数据源选择：文字按钮态（图标 + 名称 + 箭头），不用输入框外壳 */
-.ds-inline :deep(.ds-selector) {
+/* 输入框左下的数据源 chip：胶囊样式在组件内定义，这里只做定位约束 */
+.ds-chip {
   min-width: 0;
-}
-
-.ds-inline :deep(.el-input__wrapper) {
-  height: 32px;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  padding: 0 6px;
-  border-radius: 8px;
-}
-
-.ds-inline :deep(.el-input__wrapper:hover),
-.ds-inline :deep(.el-input__wrapper.is-focus) {
-  background: var(--surface-hover);
-  box-shadow: none;
-}
-
-.ds-inline :deep(.el-input__inner) {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.ds-inline :deep(.el-input__prefix) {
-  color: var(--text-muted);
-}
-
-.welcome-manage {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.welcome-manage:hover {
-  background: var(--surface-hover);
-  color: var(--text);
 }
 
 .welcome-examples {

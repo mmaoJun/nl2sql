@@ -1,123 +1,303 @@
 <template>
-  <div class="ds-selector">
-    <el-select
-      :model-value="selectedType"
-      placeholder="选择数据源类型"
-      @update:model-value="handleSelect"
-      :teleported="false"
+  <!-- 自定义下拉：触发器（文字态 / chip 态）+ 面板（搜索 + 已配置数据源列表 + 底部添加/管理） -->
+  <div class="ds-selector" :class="variant">
+    <el-popover
+      v-model:visible="visible"
+      trigger="click"
+      placement="bottom-start"
+      :width="300"
+      :show-arrow="false"
+      popper-class="ds-popover"
     >
-      <template #prefix>
-        <el-icon :size="16"><Coin /></el-icon>
+      <template #reference>
+        <button type="button" class="ds-trigger">
+          <span v-if="label" class="ds-trigger-label">{{ label }}</span>
+          <span class="ds-trigger-value" :class="{ placeholder: !selected }">
+            {{ selected ? selected.name : '选择数据源' }}
+          </span>
+          <el-icon :size="12" class="ds-caret"><ArrowDown /></el-icon>
+        </button>
       </template>
-      <el-option
-        v-for="t in typeOptions"
-        :key="t.code"
-        :label="t.displayName"
-        :value="t.code"
-        :disabled="!t.configured"
-      >
-        <div class="ds-option">
-          <span class="ds-name">{{ t.displayName }}</span>
-          <span v-if="t.configured" class="ds-type">{{ t.code }}</span>
-          <span v-else class="ds-unconfigured">未配置</span>
+
+      <div class="ds-panel">
+        <div class="ds-search">
+          <el-icon :size="14"><Search /></el-icon>
+          <input v-model="keyword" class="ds-search-input" placeholder="搜索数据源" />
         </div>
-      </el-option>
-    </el-select>
+
+        <div class="ds-list">
+          <button
+            v-for="ds in filtered"
+            :key="ds.id"
+            type="button"
+            class="ds-item"
+            :class="{ active: ds.id === modelValue }"
+            @click="pick(ds)"
+          >
+            <el-icon :size="15" class="ds-item-icon"><Coin /></el-icon>
+            <span class="ds-item-text">
+              <span class="ds-item-name">{{ ds.name }}</span>
+              <span class="ds-item-type">{{ (ds.type || '').toUpperCase() }}</span>
+            </span>
+            <el-icon v-if="ds.id === modelValue" :size="14" class="ds-item-check"><Check /></el-icon>
+          </button>
+          <div v-if="filtered.length === 0" class="ds-empty">
+            {{ dataSources.length === 0 ? '还没有配置数据源' : '没有匹配的数据源' }}
+          </div>
+        </div>
+
+        <div class="ds-divider"></div>
+        <button type="button" class="ds-action" @click="goManage">
+          <el-icon :size="15"><Plus /></el-icon>
+          <span>添加数据源</span>
+        </button>
+        <button type="button" class="ds-action" @click="goManage">
+          <el-icon :size="15"><Operation /></el-icon>
+          <span>管理数据源</span>
+        </button>
+      </div>
+    </el-popover>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ArrowDown, Search, Coin, Check, Plus, Operation } from '@element-plus/icons-vue'
 
-// 类型制选择：下拉列出引擎类型（mysql/postgresql/…），选中类型 = 使用该类型下
-// 已配置的连接（同类型多条历史数据时取 id 最小的一条）；未配置的类型置灰。
-// 对外的 v-model 仍是 datasourceId，ChatPage 及后端聊天接口无需感知类型概念。
+// 选择的是"已配置的数据源连接"（类型制下每种引擎一条，名称即连接名），
+// 底部固定提供添加入口与管理入口；inline=欢迎页文字态，chip=对话态输入框胶囊
 const props = defineProps({
   modelValue: { type: Number, default: null },
   dataSources: { type: Array, default: () => [] },
-  supportedTypes: { type: Array, default: () => [] }
+  variant: { type: String, default: 'inline' },
+  label: { type: String, default: '' }
 })
 
 const emit = defineEmits(['update:modelValue'])
+const router = useRouter()
 
-// supported-types 拉取失败时回退：用已有数据源去重出类型清单，保证选择器可用
-const typeOptions = computed(() => {
-  const base = props.supportedTypes.length
-    ? props.supportedTypes
-    : [...new Set(props.dataSources.map((d) => d.type))].map((code) => ({
-        code,
-        displayName: code.toUpperCase()
-      }))
-  return base.map((t) => ({
-    ...t,
-    configured: props.dataSources.some((d) => d.type === t.code)
-  }))
+const visible = ref(false)
+const keyword = ref('')
+
+const selected = computed(() => props.dataSources.find((ds) => ds.id === props.modelValue) || null)
+
+const filtered = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  if (!kw) return props.dataSources
+  return props.dataSources.filter((ds) =>
+    `${ds.name || ''} ${ds.type || ''}`.toLowerCase().includes(kw)
+  )
 })
 
-const selectedType = computed(() => {
-  const ds = props.dataSources.find((d) => d.id === props.modelValue)
-  return ds ? ds.type : null
-})
+function pick(ds) {
+  emit('update:modelValue', ds.id)
+  visible.value = false
+  keyword.value = ''
+}
 
-function handleSelect(code) {
-  const candidates = props.dataSources.filter((d) => d.type === code)
-  if (candidates.length === 0) return
-  const target = candidates.reduce((min, d) => (d.id < min.id ? d : min))
-  emit('update:modelValue', target.id)
+function goManage() {
+  visible.value = false
+  router.push('/datasources')
 }
 </script>
 
 <style scoped>
 .ds-selector {
-  min-width: 200px;
+  min-width: 0;
 }
 
-.ds-selector :deep(.el-select) {
-  width: 100%;
-}
-
-.ds-selector :deep(.el-input__wrapper) {
-  height: 36px;
-  border-radius: 10px;
-  box-shadow: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  padding-left: 8px;
+.ds-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
   transition: all var(--transition);
 }
 
-.ds-selector :deep(.el-input__wrapper:hover) {
+.ds-trigger:hover {
+  background: var(--surface-hover);
+}
+
+/* 欢迎页文字态：前缀「数据源」+ 已选名称，无图标无边框 */
+.ds-trigger-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ds-trigger-value {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-trigger-value.placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.ds-caret {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* 对话态 chip：输入框左下的小胶囊 */
+.ds-selector.chip .ds-trigger {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hover);
+  font-size: 12.5px;
+}
+
+.ds-selector.chip .ds-trigger:hover {
+  background: var(--bg);
   border-color: var(--primary-light);
 }
 
-.ds-selector :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+.ds-selector.chip .ds-trigger-value {
+  max-width: 140px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+</style>
+
+<!-- 面板被 teleport 到 body，样式不能走 scoped -->
+<style>
+.ds-popover.el-popover.el-popper {
+  padding: 6px !important;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
 }
 
-.ds-option {
+.ds-popover .ds-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-popover .ds-search {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--text-muted);
+}
+
+.ds-popover .ds-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ds-popover .ds-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.ds-popover .ds-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ds-popover .ds-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
 }
 
-.ds-name {
-  font-weight: 500;
-}
-
-.ds-type {
-  font-size: 11px;
-  color: var(--text-muted);
+.ds-popover .ds-item:hover {
   background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 4px;
-  text-transform: uppercase;
 }
 
-.ds-unconfigured {
+.ds-popover .ds-item-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ds-popover .ds-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ds-popover .ds-item-name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-popover .ds-item-type {
   font-size: 11px;
   color: var(--text-muted);
-  padding: 1px 6px;
+}
+
+.ds-popover .ds-item-check {
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.ds-popover .ds-empty {
+  padding: 16px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.ds-popover .ds-divider {
+  height: 1px;
+  margin: 5px 2px;
+  background: var(--border-light);
+}
+
+.ds-popover .ds-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.ds-popover .ds-action:hover {
+  background: var(--bg);
+  color: var(--text);
 }
 </style>

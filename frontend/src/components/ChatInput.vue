@@ -43,7 +43,7 @@
         </button>
       </div>
     </div>
-    <div class="input-hint">
+    <div v-if="!hideHint" class="input-hint">
       <span v-if="loading">正在生成回答，点右侧按钮可停止</span>
       <span v-else-if="stoppedNotice" class="hint-stopped">已停止生成</span>
       <span v-else-if="disabled && !inputText.trim()">请先选择数据源</span>
@@ -59,7 +59,9 @@ const props = defineProps({
   disabled: Boolean,
   // 与 disabled 分开（disabled 还包含"未选数据源"）：加载中要提示的是"生成中"，
   // 不然流式回答期间底部提示会错报成"请先选择数据源"（T12 实测发现）
-  loading: Boolean
+  loading: Boolean,
+  // 欢迎页不需要底部提示行（选源入口就在下方，快捷键提示也多余）
+  hideHint: Boolean
 })
 
 const emit = defineEmits(['send', 'stop'])
