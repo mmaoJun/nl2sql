@@ -339,7 +339,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12vh 32px 40px;
+  padding: 17vh 32px 40px;
 }
 
 .welcome-title {
@@ -347,7 +347,7 @@ onMounted(async () => {
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.01em;
-  margin-bottom: 32px;
+  margin-bottom: 44px;
   text-align: center;
 }
 

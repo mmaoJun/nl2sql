@@ -1,6 +1,6 @@
 <template>
   <div class="chat-input-wrapper">
-    <div class="input-container">
+    <div class="input-container" :class="{ 'has-footer': !!$slots['footer-left'] }">
       <!-- 单行起、随内容长高（上限 200px 后内部滚动），发送/停止悬浮在盒内右下 -->
       <textarea
         ref="textareaRef"
@@ -125,9 +125,10 @@ watch(() => props.loading, (value) => {
   box-shadow: var(--shadow-sm);
 }
 
+/* 聚焦只加投影、不动边框：让人感知到选中，但不把整框描重 */
 .input-container:focus-within {
-  border-color: var(--primary-light);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04), var(--shadow-sm);
+  border-color: var(--border);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 .input-textarea {
@@ -171,13 +172,21 @@ watch(() => props.loading, (value) => {
   min-width: 0;
 }
 
+/* 无 chip 行时按钮相对整框垂直居中；有 chip 行时贴齐该行 */
 .input-actions {
   position: absolute;
   right: 10px;
-  bottom: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.input-container.has-footer .input-actions {
+  top: auto;
+  bottom: 10px;
+  transform: none;
 }
 
 .send-btn {
