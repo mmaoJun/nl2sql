@@ -3,23 +3,27 @@
        容器 width 过渡承担动画，避免 v-if 直接换 DOM 的生硬跳变 -->
   <div :class="['session-list', { collapsed }]">
     <div class="rail">
-      <button class="rail-btn" title="展开侧栏" @click="$emit('update:collapsed', false)">
-        <el-icon :size="17"><Expand /></el-icon>
-      </button>
-      <button class="rail-btn" title="新对话" @click="$emit('create')">
-        <el-icon :size="17"><Plus /></el-icon>
-      </button>
-      <button class="rail-btn" title="数据源管理" @click="goDatasources">
-        <el-icon :size="17"><Coin /></el-icon>
-      </button>
+      <el-tooltip content="展开侧栏" placement="right" :show-after="80">
+        <button class="rail-btn" aria-label="展开侧栏" @click="$emit('update:collapsed', false)">
+          <el-icon :size="17"><Expand /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip content="新对话" placement="right" :show-after="80">
+        <button class="rail-btn" aria-label="新对话" @click="$emit('create')">
+          <el-icon :size="17"><Plus /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip content="数据源管理" placement="right" :show-after="80">
+        <button class="rail-btn" aria-label="数据源管理" @click="goDatasources">
+          <el-icon :size="17"><Coin /></el-icon>
+        </button>
+      </el-tooltip>
       <div class="rail-spacer"></div>
-      <button
-        class="rail-avatar"
-        :title="username || '未登录'"
-        @click="$emit('update:collapsed', false)"
-      >
-        {{ username.charAt(0).toUpperCase() || '?' }}
-      </button>
+      <el-tooltip :content="username || '未登录'" placement="right" :show-after="80">
+        <button class="rail-avatar" aria-label="账号" @click="$emit('update:collapsed', false)">
+          {{ username.charAt(0).toUpperCase() || '?' }}
+        </button>
+      </el-tooltip>
     </div>
 
     <div class="full">
