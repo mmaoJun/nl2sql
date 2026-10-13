@@ -34,7 +34,16 @@
             :class="{ active: ds.id === modelValue }"
             @click="pick(ds)"
           >
-            <el-icon :size="15" class="ds-item-icon"><Coin /></el-icon>
+            <svg
+              v-if="brandOf(ds.type)"
+              class="ds-item-logo"
+              :viewBox="brandOf(ds.type).viewBox"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path :d="brandOf(ds.type).path" />
+            </svg>
+            <el-icon v-else :size="15" class="ds-item-icon"><Coin /></el-icon>
             <span class="ds-item-text">
               <span class="ds-item-name">{{ ds.name }}</span>
               <span class="ds-item-type">{{ (ds.type || '').toUpperCase() }}</span>
@@ -64,6 +73,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Search, Coin, Check, Plus, Operation } from '@element-plus/icons-vue'
+import { BRAND_ICONS } from '../assets/brandIcons'
 
 // 选择的是"已配置的数据源连接"（类型制下每种引擎一条，名称即连接名），
 // 底部固定提供添加入口与管理入口；inline=欢迎页文字态，chip=对话态输入框胶囊
@@ -89,6 +99,11 @@ const filtered = computed(() => {
     `${ds.name || ''} ${ds.type || ''}`.toLowerCase().includes(kw)
   )
 })
+
+/** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */
+function brandOf(code) {
+  return BRAND_ICONS[code] || null
+}
 
 function pick(ds) {
   emit('update:modelValue', ds.id)
@@ -238,6 +253,14 @@ function goManage() {
 
 .ds-popover .ds-item-icon {
   color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* 品牌标识：面板窄，保持单色小尺寸；用 secondary 而非 muted，浅灰在 16px 下太虚 */
+.ds-popover .ds-item-logo {
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
