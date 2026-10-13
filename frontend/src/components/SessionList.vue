@@ -1,15 +1,15 @@
 <template>
-  <!-- 收起态：窄栏只留数据源 / 新对话 / 用户头像三个入口（参照截图二） -->
-  <div v-if="collapsed" class="session-list collapsed">
-    <div class="rail-top">
-      <button class="rail-btn" title="数据源" @click="$emit('update:collapsed', false)">
-        <el-icon :size="17"><Coin /></el-icon>
+  <!-- 宽度动画收起：两层内容（窄栏 rail / 全量 full）叠放，靠透明度切换，
+       容器 width 过渡承担动画，避免 v-if 直接换 DOM 的生硬跳变 -->
+  <div :class="['session-list', { collapsed }]">
+    <div class="rail">
+      <button class="rail-btn" title="展开侧栏" @click="$emit('update:collapsed', false)">
+        <el-icon :size="17"><Expand /></el-icon>
       </button>
       <button class="rail-btn" title="新对话" @click="$emit('create')">
         <el-icon :size="17"><Plus /></el-icon>
       </button>
-    </div>
-    <div class="rail-footer">
+      <div class="rail-spacer"></div>
       <button
         class="rail-avatar"
         :title="username || '未登录'"
@@ -18,77 +18,67 @@
         {{ username.charAt(0).toUpperCase() || '?' }}
       </button>
     </div>
-  </div>
 
-  <div v-else class="session-list">
-    <div class="sidebar-header">
-      <div class="brand">
-        <span class="brand-logo">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-        </span>
-        <span class="brand-name">NL2SQL</span>
-      </div>
-      <button class="collapse-btn" title="收起侧栏" @click="$emit('update:collapsed', true)">
-        <el-icon :size="16"><Fold /></el-icon>
-      </button>
-    </div>
-
-    <!-- 顶部：数据源选择（类型制）+ 管理页齿轮，开新对话前在这里选源 -->
-    <div class="sidebar-top">
-      <DataSourceSelector
-        :model-value="dsId"
-        :data-sources="dataSources"
-        :supported-types="supportedTypes"
-        @update:model-value="$emit('update:dsId', $event)"
-      />
-      <button class="gear-btn" title="数据源管理" @click="goDatasources">
-        <el-icon :size="16"><Setting /></el-icon>
-      </button>
-    </div>
-
-    <button class="new-session-btn" @click="$emit('create')">
-      <el-icon :size="15"><Plus /></el-icon>
-      <span>新对话</span>
-    </button>
-
-    <div class="session-section-title">最近对话</div>
-
-    <div class="session-items" v-loading="loading">
-      <div v-if="!loading && sessions.length === 0" class="session-empty">
-        还没有对话
+    <div class="full">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-logo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </span>
+          <span class="brand-name">NL2SQL</span>
+        </div>
+        <button class="header-btn" title="数据源管理" @click="goDatasources">
+          <el-icon :size="16"><Setting /></el-icon>
+        </button>
+        <button class="header-btn" title="收起侧栏" @click="$emit('update:collapsed', true)">
+          <el-icon :size="16"><Fold /></el-icon>
+        </button>
       </div>
 
-      <div
-        v-for="s in sessions"
-        :key="s.id"
-        :class="['session-item', { active: s.id === currentId }]"
-        @click="$emit('select', s.id)"
-      >
-        <div class="session-main">
-          <div class="session-title-row">
-            <span class="session-title">{{ s.title || '新对话' }}</span>
-            <span class="session-meta">{{ metaText(s) }}</span>
+      <button class="new-session-btn" @click="$emit('create')">
+        <el-icon :size="15"><Plus /></el-icon>
+        <span>新对话</span>
+      </button>
+
+      <div class="session-section-title">最近对话</div>
+
+      <div class="session-items" v-loading="loading">
+        <div v-if="!loading && sessions.length === 0" class="session-empty">
+          还没有对话
+        </div>
+
+        <div
+          v-for="s in sessions"
+          :key="s.id"
+          :class="['session-item', { active: s.id === currentId }]"
+          @click="$emit('select', s.id)"
+        >
+          <div class="session-main">
+            <div class="session-title-row">
+              <span class="session-title">{{ s.title || '新对话' }}</span>
+              <span class="session-meta">{{ metaText(s) }}</span>
+            </div>
+            <span v-if="s.preview" class="session-preview">{{ s.preview }}</span>
           </div>
-          <span v-if="s.preview" class="session-preview">{{ s.preview }}</span>
-        </div>
-        <div class="session-actions" @click.stop>
-          <button class="action-btn" title="重命名" @click="onRename(s)">
-            <el-icon :size="13"><EditPen /></el-icon>
-          </button>
-          <button class="action-btn danger" title="删除" @click="onRemove(s)">
-            <el-icon :size="13"><Delete /></el-icon>
-          </button>
+          <div class="session-actions" @click.stop>
+            <button class="action-btn" title="重命名" @click="onRename(s)">
+              <el-icon :size="13"><EditPen /></el-icon>
+            </button>
+            <button class="action-btn danger" title="删除" @click="onRemove(s)">
+              <el-icon :size="13"><Delete /></el-icon>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="session-footer">
-      <div class="user-avatar">{{ username.charAt(0).toUpperCase() || '?' }}</div>
-      <span class="user-name">{{ username || '未登录' }}</span>
-      <button class="logout-btn" title="退出登录" @click="logout">
-        <el-icon :size="13"><SwitchButton /></el-icon>
-        <span>退出</span>
-      </button>
+      <div class="session-footer">
+        <div class="user-avatar">{{ username.charAt(0).toUpperCase() || '?' }}</div>
+        <span class="user-name">{{ username || '未登录' }}</span>
+        <button class="logout-btn" title="退出登录" @click="logout">
+          <el-icon :size="13"><SwitchButton /></el-icon>
+          <span>退出</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -97,8 +87,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, EditPen, Delete, Setting, SwitchButton, Coin, Fold } from '@element-plus/icons-vue'
-import DataSourceSelector from './DataSourceSelector.vue'
+import { Plus, EditPen, Delete, Setting, SwitchButton, Expand, Fold } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -106,13 +95,10 @@ defineProps({
   sessions: { type: Array, default: () => [] },
   currentId: { type: Number, default: null },
   loading: { type: Boolean, default: false },
-  collapsed: { type: Boolean, default: false },
-  dsId: { type: [Number, null], default: null },
-  dataSources: { type: Array, default: () => [] },
-  supportedTypes: { type: Array, default: () => [] }
+  collapsed: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:dsId', 'update:collapsed'])
+const emit = defineEmits(['create', 'select', 'rename', 'remove', 'update:collapsed'])
 
 const username = ref('')
 watch(() => router.currentRoute.value.path, () => {
@@ -183,28 +169,45 @@ async function onRemove(session) {
 
 <style scoped>
 .session-list {
+  position: relative;
   width: 260px;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
   border-right: 1px solid var(--border-light);
   background: var(--surface-hover);
   min-height: 0;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ---- 收起态窄栏 ---- */
 .session-list.collapsed {
   width: 56px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
 }
 
-.rail-top {
+/* ---- 窄栏：绝对定位叠在全量层之上，靠透明度过渡进出 ---- */
+.rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 56px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 10px 0;
   gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.collapsed .rail {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.2s ease 0.1s;
+}
+
+.rail-spacer {
+  flex: 1;
 }
 
 .rail-btn {
@@ -246,12 +249,26 @@ async function onRemove(session) {
   background: var(--primary-dark);
 }
 
-/* ---- 展开态 ---- */
+/* ---- 全量层：固定 260 宽，收起时淡出（宽度动画期间内容不挤压变形） ---- */
+.full {
+  width: 260px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.collapsed .full {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 14px 10px;
+  gap: 2px;
+  padding: 14px 12px 10px 14px;
   flex-shrink: 0;
 }
 
@@ -259,6 +276,7 @@ async function onRemove(session) {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
   min-width: 0;
 }
 
@@ -281,7 +299,7 @@ async function onRemove(session) {
   letter-spacing: 0.01em;
 }
 
-.collapse-btn {
+.header-btn {
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -293,41 +311,7 @@ async function onRemove(session) {
   transition: all var(--transition);
 }
 
-.collapse-btn:hover {
-  background: var(--bg);
-  color: var(--text);
-}
-
-/* ---- 顶部：数据源选择 + 管理齿轮 ---- */
-.sidebar-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 12px 6px;
-  flex-shrink: 0;
-}
-
-.sidebar-top .ds-selector {
-  flex: 1;
-  min-width: 0;
-}
-
-.gear-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all var(--transition);
-  flex-shrink: 0;
-}
-
-.gear-btn:hover {
+.header-btn:hover {
   background: var(--bg);
   color: var(--text);
 }
@@ -541,10 +525,9 @@ async function onRemove(session) {
   background: var(--error-bg);
 }
 
-/* 键盘可达性：新的按钮保持一致的 focus 视觉 */
+/* 键盘可达性：按钮保持一致的 focus 视觉 */
 .new-session-btn:focus-visible,
-.gear-btn:focus-visible,
-.collapse-btn:focus-visible,
+.header-btn:focus-visible,
 .rail-btn:focus-visible,
 .rail-avatar:focus-visible,
 .logout-btn:focus-visible {

@@ -1,58 +1,59 @@
 <template>
   <div class="chat-input-wrapper">
     <div class="input-container">
+      <!-- 单行起、随内容长高（上限 200px 后内部滚动），发送/停止悬浮在盒内右下 -->
       <textarea
         ref="textareaRef"
         v-model="inputText"
         class="input-textarea"
         placeholder="想查什么，一问即得"
         :disabled="disabled"
-        rows="2"
+        rows="1"
+        @input="autoResize"
         @keydown.enter.exact.prevent="handleSend"
       ></textarea>
-      <!-- 盒内底行：左侧放数据源 chip 等工具（插槽），右侧停止/发送 -->
-      <div class="input-footer">
+      <div v-if="$slots['footer-left']" class="input-footer">
         <div class="input-footer-left">
           <slot name="footer-left" />
         </div>
-        <div class="input-footer-right">
-          <button
-            v-if="loading"
-            class="stop-btn"
-            title="停止生成"
-            @click="handleStop"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-          </button>
-          <button
-            v-else
-            class="send-btn"
-            :class="{ active: inputText.trim() && !disabled }"
-            :disabled="!inputText.trim() || disabled"
-            title="发送"
-            @click="handleSend"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          </button>
-        </div>
+      </div>
+      <div class="input-actions">
+        <button
+          v-if="loading"
+          class="stop-btn"
+          title="停止生成"
+          @click="handleStop"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+        <button
+          v-else
+          class="send-btn"
+          :class="{ active: inputText.trim() && !disabled }"
+          :disabled="!inputText.trim() || disabled"
+          title="发送"
+          @click="handleSend"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div class="input-hint">
       <span v-if="loading">正在生成回答，点右侧按钮可停止</span>
       <span v-else-if="stoppedNotice" class="hint-stopped">已停止生成</span>
-      <span v-else-if="disabled && !inputText.trim()">请先在左侧选择数据源</span>
+      <span v-else-if="disabled && !inputText.trim()">请先选择数据源</span>
       <span v-else>Enter 发送 · Shift+Enter 换行</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 
 const props = defineProps({
   disabled: Boolean,
@@ -68,6 +69,19 @@ const textareaRef = ref(null)
 const stoppedNotice = ref(false)
 let stopRequested = false
 let noticeTimer = null
+
+const MAX_HEIGHT = 200
+
+// 高度跟随内容：先归零再量 scrollHeight，封顶后由 textarea 自己滚动
+function autoResize() {
+  const el = textareaRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
+}
+
+watch(inputText, () => nextTick(autoResize))
+onMounted(autoResize)
 
 function handleSend() {
   const text = inputText.value.trim()
@@ -96,15 +110,16 @@ watch(() => props.loading, (value) => {
   margin: 0 auto;
 }
 
-/* 单盒结构：textarea + 盒内底行，圆角大框（参照截图） */
+/* 单盒结构：textarea（+ 可选 chip 行），发送/停止绝对定位在右下 */
 .input-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 12px 14px 10px;
-  transition: all var(--transition);
+  padding: 11px 52px 11px 16px;
+  transition: border-color var(--transition), box-shadow var(--transition);
   box-shadow: var(--shadow-sm);
 }
 
@@ -114,6 +129,7 @@ watch(() => props.loading, (value) => {
 }
 
 .input-textarea {
+  display: block;
   width: 100%;
   border: none;
   outline: none;
@@ -123,9 +139,10 @@ watch(() => props.loading, (value) => {
   line-height: 1.6;
   color: var(--text);
   background: transparent;
-  padding: 2px 2px 8px;
-  min-height: 40px;
-  max-height: 160px;
+  padding: 0;
+  min-height: 22px;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .input-textarea::placeholder {
@@ -137,11 +154,12 @@ watch(() => props.loading, (value) => {
   cursor: not-allowed;
 }
 
+/* chip 行（对话态）：左侧数据源 chip，右侧给悬浮按钮让位 */
 .input-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  margin-top: 8px;
+  padding-right: 0;
 }
 
 .input-footer-left {
@@ -151,11 +169,13 @@ watch(() => props.loading, (value) => {
   min-width: 0;
 }
 
-.input-footer-right {
+.input-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
 }
 
 .send-btn {

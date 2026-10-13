@@ -1,13 +1,10 @@
 <template>
   <div class="chat-page">
     <SessionList
-      v-model:dsId="selectedDsId"
       v-model:collapsed="sidebarCollapsed"
       :sessions="sessionStore.sessions"
       :current-id="sessionStore.currentSessionId"
       :loading="sessionStore.loading"
-      :data-sources="dsStore.dataSources"
-      :supported-types="dsStore.supportedTypes"
       @create="handleCreateSession"
       @select="handleSelectSession"
       @rename="handleRenameSession"
@@ -16,7 +13,7 @@
 
     <div class="chat-main">
     <div class="chat-header">
-      <!-- 数据源选择已迁入侧栏顶部；此处只保留表结构入口（SchemaExplorer 走 /api/v1/metadata）。
+      <!-- 表结构入口（SchemaExplorer 走 /api/v1/metadata）；
            模型由后端 nl2sql.model.provider 配置决定，无按请求切换接口，ModelSelector 隐藏 -->
       <el-button size="small" text :icon="Grid" @click="schemaVisible = true">表结构</el-button>
     </div>
@@ -26,6 +23,46 @@
       <button class="retry-btn" @click="reloadAfterFailure">重试</button>
     </div>
 
+    <!-- 新对话欢迎页：问候语 + 居中输入框 + 框下选数据源 + 示例问题（参照截图） -->
+    <div v-if="!restoring && chatStore.messages.length === 0" class="welcome">
+      <h2 class="welcome-title">Hi {{ username || '朋友' }}，有什么可以帮你的？</h2>
+      <div class="welcome-input">
+        <ChatInput
+          :disabled="chatStore.loading || !selectedDsId"
+          :loading="chatStore.loading"
+          @send="handleSend"
+          @stop="handleStop"
+        />
+        <div class="welcome-selectors">
+          <div class="ds-inline">
+            <DataSourceSelector
+              v-model="selectedDsId"
+              :data-sources="dsStore.dataSources"
+              :supported-types="dsStore.supportedTypes"
+            />
+          </div>
+          <button class="welcome-manage" @click="goManage">
+            <el-icon :size="14"><Setting /></el-icon>
+            <span>管理</span>
+          </button>
+        </div>
+      </div>
+      <div class="welcome-examples">
+        <div class="examples-label">试试这些示例问题</div>
+        <div class="example-queries">
+          <button
+            v-for="q in exampleQueries"
+            :key="q"
+            class="example-chip"
+            @click="fillQuery(q)"
+          >
+            {{ q }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <template v-else>
     <div class="chat-body">
       <div class="chat-messages" ref="messagesRef">
         <!-- 消息列与输入框同宽（900px 居中），无头像直排（参照黑白灰改版截图） -->
@@ -37,27 +74,6 @@
         </div>
 
         <template v-else>
-          <div v-if="chatStore.messages.length === 0" class="empty-state">
-            <div class="empty-icon">
-              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                <path d="M8 9h8M8 13h4"/>
-              </svg>
-            </div>
-            <h3 class="empty-title">开始对话</h3>
-            <p class="empty-desc">先在左侧选择数据源，再输入自然语言问题，自动生成 SQL 并查询结果</p>
-            <div class="example-queries">
-              <button
-                v-for="q in exampleQueries"
-                :key="q"
-                class="example-chip"
-                @click="fillQuery(q)"
-              >
-                {{ q }}
-              </button>
-            </div>
-          </div>
-
           <template v-for="(msg, idx) in chatStore.messages" :key="idx">
             <ChatMessage :message="msg" @retry="handleRetry(msg)" />
             <TracePanel v-if="msg.trace && msg.trace.length" :trace="msg.trace" />
@@ -83,8 +99,8 @@
         @stop="handleStop"
       >
         <!-- 对话开始后输入框左下显示当前数据源 chip（可点击切换类型）；
-             开新对话前的选择入口在侧栏顶部 -->
-        <template v-if="chatStore.messages.length > 0" #footer-left>
+             开新对话前的选择入口在欢迎页输入框下方 -->
+        <template #footer-left>
           <div class="ds-chip">
             <DataSourceSelector
               v-model="selectedDsId"
@@ -95,6 +111,7 @@
         </template>
       </ChatInput>
     </div>
+    </template>
     </div>
 
     <el-drawer v-model="schemaVisible" title="表结构浏览" size="440px">
@@ -105,7 +122,8 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
-import { Grid } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Grid, Setting } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chatStore'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -120,10 +138,13 @@ import DataSourceSelector from '../components/DataSourceSelector.vue'
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
 const sessionStore = useSessionStore()
+const router = useRouter()
 const messagesRef = ref(null)
 const selectedDsId = ref(null)
 const loadError = ref(false)
 const schemaVisible = ref(false)
+// 欢迎页问候语用（与侧栏同源，读 localStorage 的登录名）
+const username = ref(localStorage.getItem('username') || '')
 // 首屏 / 切会话的历史加载中（骨架屏），与 chatStore.loading（生成中）分开
 const restoring = ref(false)
 // 侧栏收起态持久化：窄栏只看数据源 / 新对话 / 用户头像
@@ -142,6 +163,10 @@ const exampleQueries = [
 
 function fillQuery(q) {
   handleSend(q)
+}
+
+function goManage() {
+  router.push('/datasources')
 }
 
 async function handleCreateSession() {
@@ -341,13 +366,101 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-.empty-state {
+/* ---- 新对话欢迎页（问候 + 居中输入 + 框下选源 + 示例） ---- */
+.welcome {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 14vh 0 8vh;
+  padding: 12vh 32px 40px;
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-bottom: 32px;
   text-align: center;
+}
+
+.welcome-input {
+  width: 100%;
+  max-width: 720px;
+}
+
+.welcome-input :deep(.chat-input-wrapper) {
+  max-width: 100%;
+}
+
+.welcome-selectors {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+/* 框下数据源选择：文字按钮态（图标 + 名称 + 箭头），不用输入框外壳 */
+.ds-inline :deep(.ds-selector) {
+  min-width: 0;
+}
+
+.ds-inline :deep(.el-input__wrapper) {
+  height: 32px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
+.ds-inline :deep(.el-input__wrapper:hover),
+.ds-inline :deep(.el-input__wrapper.is-focus) {
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+
+.ds-inline :deep(.el-input__inner) {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ds-inline :deep(.el-input__prefix) {
+  color: var(--text-muted);
+}
+
+.welcome-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.welcome-manage:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.welcome-examples {
+  margin-top: 56px;
+  width: 100%;
+  max-width: 720px;
+}
+
+.examples-label {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
 }
 
 /* 骨架屏：仅占对话区，padding 与消息区对齐 */
@@ -359,37 +472,11 @@ onMounted(async () => {
   margin-top: 24px;
 }
 
-.empty-icon {
-  width: 80px;
-  height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--primary-bg);
-  color: var(--primary);
-  margin-bottom: 20px;
-}
-
-.empty-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: 28px;
-}
-
 .example-queries {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   justify-content: center;
-  max-width: 560px;
 }
 
 .example-chip {
