@@ -56,7 +56,7 @@
         </div>
 
         <div class="ds-divider"></div>
-        <button type="button" class="ds-action" @click="goManage">
+        <button type="button" class="ds-action" @click="goAdd">
           <el-icon :size="15"><Plus /></el-icon>
           <span>添加数据源</span>
         </button>
@@ -109,6 +109,12 @@ function pick(ds) {
   emit('update:modelValue', ds.id)
   visible.value = false
   keyword.value = ''
+}
+
+// 添加直达向导（/datasources/new），管理回列表（/datasources）
+function goAdd() {
+  visible.value = false
+  router.push('/datasources/new')
 }
 
 function goManage() {

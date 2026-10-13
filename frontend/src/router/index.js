@@ -18,6 +18,13 @@ const routes = [
     component: () => import('../views/ChatPage.vue')
   },
   {
+    // 添加数据源向导：与 /datasources 共用外壳，进入即落在向导第一步。
+    // 单独一条路径是为了让「返回管理」「侧栏数据源管理」有明确目标可回退
+    path: '/datasources/new',
+    name: 'DataSourceNew',
+    component: () => import('../views/ChatPage.vue')
+  },
+  {
     // 原「设置」页内容就是数据源管理，独立成 /datasources 后旧地址重定向兜底
     path: '/settings',
     redirect: '/datasources'

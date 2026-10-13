@@ -69,6 +69,11 @@
 
     <!-- ============ 向导：选择类型 / 配置连接 / 添加数据表 ============ -->
     <div v-else class="wizard">
+      <button class="wizard-back" @click="finishWizard">
+        <el-icon :size="14"><ArrowLeft /></el-icon>
+        <span>返回数据源管理</span>
+      </button>
+
       <div class="steps">
         <div v-for="(label, i) in STEP_LABELS" :key="label" class="step-wrap">
           <span v-if="i > 0" class="step-line" :class="{ on: wizardStep > i }"></span>
@@ -258,10 +263,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin, ArrowLeft
 } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { useDataSourceStore } from '../stores/datasourceStore'
@@ -270,6 +276,8 @@ import {
 } from '../api/endpoints'
 
 const dsStore = useDataSourceStore()
+const route = useRoute()
+const router = useRouter()
 
 const STEP_LABELS = ['选择类型', '配置连接']
 
@@ -395,9 +403,16 @@ function relativeTime(value) {
 
 /* ---------------- 向导 ---------------- */
 
-function startWizard() {
+// 向导步骤由路由驱动：/datasources/new 落到第 1 步，回到 /datasources 即列表。
+// 这样「返回管理」「侧栏数据源管理」「下拉里的管理数据源」都只要 push 一个路径，
+// 无需跨组件通信
+watch(() => route.path, (path) => {
   pickedType.value = null
-  wizardStep.value = 1
+  wizardStep.value = path === '/datasources/new' ? 1 : 0
+}, { immediate: true })
+
+function startWizard() {
+  router.push('/datasources/new')
 }
 
 function pickType(t) {
@@ -451,9 +466,9 @@ async function submitConnection() {
   }
 }
 
+/** 回列表：改路由，步骤由上面的 watch 统一重置（原地 push 同一路径不会触发，也无副作用） */
 function finishWizard() {
-  wizardStep.value = 0
-  pickedType.value = null
+  router.push('/datasources')
 }
 
 /* ---------------- 编辑弹窗 ---------------- */
@@ -798,6 +813,25 @@ onMounted(() => {
 .wizard {
   max-width: 1180px;
   margin: 0 auto;
+}
+
+/* 向导左上角的回退入口：回到 /datasources 列表 */
+.wizard-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.wizard-back:hover {
+  color: var(--primary);
 }
 
 .steps {
