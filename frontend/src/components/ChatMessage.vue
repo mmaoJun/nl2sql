@@ -49,15 +49,14 @@
         </div>
       </div>
 
-      <!-- 用户气泡：悬停时气泡下方浮出复制按钮 -->
+      <!-- 用户气泡：悬停时气泡右下浮出复制图标 -->
       <button
         v-if="message.role === 'user' && message.content"
         class="bubble-copy"
         :title="bubbleCopied ? '已复制' : '复制内容'"
         @click="copyText(message.content, 'bubble')"
       >
-        <el-icon :size="12"><Check v-if="bubbleCopied" /><DocumentCopy v-else /></el-icon>
-        <span>{{ bubbleCopied ? '已复制' : '复制' }}</span>
+        <el-icon :size="14"><Check v-if="bubbleCopied" /><DocumentCopy v-else /></el-icon>
       </button>
     </div>
   </div>
@@ -155,18 +154,18 @@ async function copyText(text, target) {
   width: 100%;
 }
 
-/* 用户气泡悬停时在下方浮出复制按钮（键盘可达：focus-visible 同样显示） */
+/* 用户气泡悬停时右下浮出复制图标（键盘可达：focus-visible 同样显示） */
 .bubble-copy {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-  padding: 3px 8px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
   cursor: pointer;
   opacity: 0;
   transition: all var(--transition);
