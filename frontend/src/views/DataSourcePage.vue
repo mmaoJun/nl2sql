@@ -25,7 +25,10 @@
         <div v-for="ds in filtered" :key="ds.id" class="ds-card">
           <div class="card-head">
             <span class="type-icon" :style="{ background: typeColor(ds.type) }">
-              <el-icon><component :is="typeIcon(ds.type)" /></el-icon>
+              <svg v-if="brandOf(ds.type)" :viewBox="brandOf(ds.type).viewBox" fill="currentColor" aria-hidden="true">
+                <path :d="brandOf(ds.type).path" />
+              </svg>
+              <el-icon v-else><Coin /></el-icon>
             </span>
             <span class="card-name">{{ ds.name }}</span>
             <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
@@ -95,7 +98,10 @@
               @click="pickType(t)"
             >
               <span class="type-icon lg" :style="{ background: typeColor(t.code) }">
-                <el-icon><component :is="typeIcon(t.code)" /></el-icon>
+                <svg v-if="brandOf(t.code)" :viewBox="brandOf(t.code).viewBox" fill="currentColor" aria-hidden="true">
+                  <path :d="brandOf(t.code).path" />
+                </svg>
+                <el-icon v-else><Coin /></el-icon>
               </span>
               <span class="type-text">
                 <span class="type-name">{{ t.displayName }}</span>
@@ -111,7 +117,10 @@
         <div class="connect-card">
           <div class="connect-illustration">
             <span class="type-icon xl" :style="{ background: typeColor(pickedType.code) }">
-              <el-icon><component :is="typeIcon(pickedType.code)" /></el-icon>
+              <svg v-if="brandOf(pickedType.code)" :viewBox="brandOf(pickedType.code).viewBox" fill="currentColor" aria-hidden="true">
+                <path :d="brandOf(pickedType.code).path" />
+              </svg>
+              <el-icon v-else><Coin /></el-icon>
             </span>
             <span class="illustration-name">{{ pickedType.displayName }}</span>
           </div>
@@ -252,9 +261,9 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin,
-  Grid, FolderOpened, Share
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin
 } from '@element-plus/icons-vue'
+import { BRAND_ICONS } from '../assets/brandIcons'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import {
   createDataSource, updateDataSource, deleteDataSource, testDataSource
@@ -288,14 +297,15 @@ const form = reactive({
   extraConfig: ''
 })
 
-// 类型图标底色走灰阶梯度（黑白灰主题），仅靠深浅区分类型
+// 类型图标底色走灰阶梯度（黑白灰主题）。最浅两档压深过：白色品牌标识
+// 落在 #9ca0a3 这类浅灰上对比度不足（约 2:1），辨识度差
 const TYPE_COLORS = {
   mysql: '#26282c',
   postgresql: '#3f4247',
   hive: '#55585c',
   hdfs: '#6b6e72',
-  rest: '#838689',
-  graphql: '#9ca0a3'
+  rest: '#75787c',
+  graphql: '#86898d'
 }
 
 // 卡片副文案（截图里是版本号，我们换成连接方式与默认端口）
@@ -306,17 +316,6 @@ const TYPE_HINTS = {
   hdfs: 'WebHDFS 目录 · 9870',
   rest: 'REST 接口',
   graphql: 'GraphQL 接口'
-}
-
-// 六类数据源的图标：无品牌 logo（避免侵权），改用可表达该类形态的通用图形。
-// 关系型两库共用圆柱（同属一类，靠名称与色阶区分），其余各取一个贴近语义的图标
-const TYPE_ICONS = {
-  mysql: Coin,
-  postgresql: Coin,
-  hive: Grid,
-  hdfs: FolderOpened,
-  rest: Connection,
-  graphql: Share
 }
 
 // supported-types 拉取失败时的兜底清单（与后端注册的六类一致）
@@ -380,8 +379,9 @@ function typeColor(code) {
   return TYPE_COLORS[code] || '#64748b'
 }
 
-function typeIcon(code) {
-  return TYPE_ICONS[code] || Coin
+/** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */
+function brandOf(code) {
+  return BRAND_ICONS[code] || null
 }
 
 /** 卡片副文案：当前没有采集库/表统计，用连接目标替代"描述" */
@@ -674,7 +674,7 @@ onMounted(() => {
   gap: 10px;
 }
 
-/* 图标尺寸继承此处 font-size（el-icon 为 1em），三个档位只需改字号 */
+/* 品牌标识尺寸继承此处 font-size（svg / el-icon 均为 1em），三个档位只需改字号 */
 .type-icon {
   width: 34px;
   height: 34px;
@@ -683,14 +683,20 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: 21px;
   flex-shrink: 0;
+}
+
+.type-icon svg {
+  width: 1em;
+  height: 1em;
+  display: block;
 }
 
 .type-icon.lg {
   width: 44px;
   height: 44px;
-  font-size: 19px;
+  font-size: 24px;
   border-radius: 11px;
 }
 
@@ -698,7 +704,7 @@ onMounted(() => {
   width: 120px;
   height: 120px;
   border-radius: 28px;
-  font-size: 46px;
+  font-size: 64px;
 }
 
 .card-name {
