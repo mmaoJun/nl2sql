@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -43,12 +44,14 @@ public class MetadataService {
     private static final String SCHEMA_CACHE_PREFIX = "schema:";
 
     /**
-     * 预览接口未显式传 limit 时的默认预览行数。
+     * 预览接口未显式传 pageSize 时的默认每页行数。
      *
-     * <p>与 tool 层 {@code sample_data} 的默认值保持一致（均为 3），避免同一语义在两处
-     * 给出不同缺省；tool 层常量属 tool 包，本层不反向依赖，故此处独立定义。
+     * <p>取 50 而非 tool 层 {@code sample_data} 的 3：数据预览是给人翻页看的列表页，
+     * 每页 3 行毫无意义；50 行在"一屏能看完"与"请求体不至于过大"之间取平衡，
+     * 且与前端分页组件默认的"50 行/页"选项对齐。真正生效前仍会被
+     * {@code nl2sql.sql-security.max-limit} 截断，缺省值调大不会突破安全上限。
      */
-    private static final int DEFAULT_PREVIEW_LIMIT = 3;
+    private static final int DEFAULT_PAGE_SIZE = 50;
 
     /**
      * 允许拼接进 SQL 的表名形态：普通标识符，可选带库名（schema）前缀。
@@ -171,41 +174,54 @@ public class MetadataService {
     }
 
     /**
-     * 预览指定表的前 N 行数据（供前端数据源详情页使用，不经 Agent 工具层）。
+     * 分页预览指定表的数据（供前端数据源详情页使用，不经 Agent 工具层）。
      *
-     * <p>构造的 SQL 形如 {@code SELECT * FROM <tableName> LIMIT <n>}。表名是被拼进 SQL 的
-     * 外部入参，是本接口唯一的拼接注入面，因此做双重拦截：
+     * <p>分页需要两条 SQL：取数用 {@code SELECT * FROM <tableName> LIMIT <pageSize> OFFSET <offset>}
+     * （{@code offset = (page - 1) * pageSize}），计数用 {@code SELECT COUNT(*) FROM <tableName>}；
+     * 总行数写回结果对象的 {@code total}，前端据此渲染页码（否则只能"下一页/上一页"盲翻）。
+     *
+     * <p><b>安全双重拦截（不得削弱）</b>：表名是被拼进 SQL 的外部入参，是本接口唯一的
+     * 拼接注入面，因此：
      * <ol>
-     *   <li>表名先按标识符白名单（{@code [库名.]表名}）过滤，并确认它确实存在于该数据源的
-     *       Schema 中（忽略大小写），杜绝任意标识符进入 SQL；</li>
-     *   <li>拼接完成的整条 SQL 仍整体交给 {@link SqlSecurityChecker#validate}，
-     *       不因为"是自己拼的"而免检。</li>
+     *   <li>表级校验先做一次——表名按标识符白名单（{@code [库名.]表名}）过滤，并确认它
+     *       确实存在于该数据源的 Schema 中（忽略大小写），杜绝任意标识符进入 SQL；</li>
+     *   <li>拼接完成的<b>每一条</b> SQL（取数与计数各一条）都整体交给
+     *       {@link SqlSecurityChecker#validate}，不因为"是自己拼的"而免检：新增的
+     *       COUNT 语句同样是拼接产物，同样必须过校验器，不能只校验取数语句。</li>
      * </ol>
      * 任一不通过即抛 {@link BusinessException}，绝不把可疑 SQL 交给适配器执行。
+     * 计数失败只降级不报错：拿不到总行数时以本页实际行数兜底，保证列表页始终可打开。
      *
      * @param datasourceId 数据源 ID
      * @param tableName    表名（不区分大小写，需为该数据源中真实存在的表）
-     * @param limit        预览行数，可为 null（默认 {@value #DEFAULT_PREVIEW_LIMIT}），上限为配置的 max-limit
-     * @return 查询结果（列名 + 预览行）
+     * @param page         页码，从 1 开始，可为 null（默认 1），小于 1 时归一为 1
+     * @param pageSize     每页行数，可为 null（默认 {@value #DEFAULT_PAGE_SIZE}），非正数时取默认值，
+     *                     上限为配置的 max-limit
+     * @return 查询结果（列名 + 当前页数据行 + 整表总行数 total）
      * @throws BusinessException 表名非法、表不存在或构造出的 SQL 未通过安全校验时抛出
      */
-    public QueryResult previewTable(Long datasourceId, String tableName, Integer limit) {
-        // 第一重：标识符形态白名单 + 必须是该数据源中真实存在的表
+    public QueryResult previewTable(Long datasourceId, String tableName, Integer page, Integer pageSize) {
+        // 第一重：标识符形态白名单 + 必须是该数据源中真实存在的表（表级，两条 SQL 共用一次校验）
         validateTableName(tableName);
         ensureTableExists(datasourceId, tableName);
 
-        int effectiveLimit = resolvePreviewLimit(limit);
-        String sql = "SELECT * FROM " + tableName + " LIMIT " + effectiveLimit;
-        // 第二重：表名拼接是注入面，构造完的 SQL 必须整体过校验器，不因为"是自己拼的"而免检
-        ValidationResult validation = sqlSecurityChecker.validate(sql);
-        if (!validation.valid()) {
-            throw new BusinessException(ErrorCode.SQL_VALIDATION_FAILED,
-                    "数据预览未通过安全校验: " + validation.errorMessage());
-        }
+        int effectivePage = resolvePage(page);
+        int effectivePageSize = resolvePageSize(pageSize);
+        long offset = (long) (effectivePage - 1) * effectivePageSize;
 
-        QueryResult result = resolveAdapter(datasourceId).executeQuery(sql, effectiveLimit);
-        log.info("[previewTable] datasourceId={} table={} limit={} rows={}",
-                datasourceId, tableName, effectiveLimit, result.getRowCount());
+        String rowsSql = "SELECT * FROM " + tableName
+                + " LIMIT " + effectivePageSize + " OFFSET " + offset;
+        String countSql = "SELECT COUNT(*) FROM " + tableName;
+        // 第二重：两条 SQL 都是表名拼接产物，必须各自整体过校验器，不因为"是自己拼的"而免检
+        validateConstructedSql(rowsSql);
+        validateConstructedSql(countSql);
+
+        DataSourceAdapter adapter = resolveAdapter(datasourceId);
+        QueryResult result = adapter.executeQuery(rowsSql, effectivePageSize);
+        result.setTotal(resolveTotal(adapter, countSql, result));
+        log.info("[previewTable] datasourceId={} table={} page={} pageSize={} offset={} rows={} total={}",
+                datasourceId, tableName, effectivePage, effectivePageSize, offset,
+                result.getRowCount(), result.getTotal());
         return result;
     }
 
@@ -224,16 +240,107 @@ public class MetadataService {
     }
 
     /**
-     * 归一化预览行数：null 或非正数取默认值 {@value #DEFAULT_PREVIEW_LIMIT}，并截断到 max-limit 以内。
+     * 归一化页码：null 或小于 1 一律取第 1 页。
      *
-     * @param limit 调用方传入的行数，可为 null
-     * @return 实际生效的行数
+     * <p>只做下界收敛，不设上界：页码越界时 COUNT 会告诉前端真实总页数，这里强行
+     * 猜测上界反而会把用户翻到空白页；越界查询本身也只是返回空行，无安全影响。
+     *
+     * @param page 调用方传入的页码，可为 null
+     * @return 实际生效的页码，恒 ≥ 1
      */
-    private int resolvePreviewLimit(Integer limit) {
-        if (limit == null || limit <= 0) {
-            return Math.min(DEFAULT_PREVIEW_LIMIT, maxLimit);
+    private int resolvePage(Integer page) {
+        if (page == null || page < 1) {
+            return 1;
         }
-        return Math.min(limit, maxLimit);
+        return page;
+    }
+
+    /**
+     * 归一化每页行数：null 或非正数取默认值 {@value #DEFAULT_PAGE_SIZE}，并截断到 max-limit 以内。
+     *
+     * <p>截断到 max-limit 是硬约束：pageSize 由前端传入，若不设上限，调用方可以传
+     * 一个极大的值把分页退化成全表拉取，绕过限流。
+     *
+     * @param pageSize 调用方传入的每页行数，可为 null
+     * @return 实际生效的每页行数
+     */
+    private int resolvePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize <= 0) {
+            return Math.min(DEFAULT_PAGE_SIZE, maxLimit);
+        }
+        return Math.min(pageSize, maxLimit);
+    }
+
+    /**
+     * 校验拼接完成的 SQL，不通过即抛异常，绝不返回给调用方继续执行。
+     *
+     * @param sql 由表名拼接出的完整 SQL
+     * @throws BusinessException 未通过安全校验时抛出
+     */
+    private void validateConstructedSql(String sql) {
+        ValidationResult validation = sqlSecurityChecker.validate(sql);
+        if (!validation.valid()) {
+            throw new BusinessException(ErrorCode.SQL_VALIDATION_FAILED,
+                    "数据预览未通过安全校验: " + validation.errorMessage());
+        }
+    }
+
+    /**
+     * 查询整表总行数，失败时以本页实际行数兜底。
+     *
+     * <p>计数列名由后端与数据库方言共同决定（可能是 {@code COUNT(*)}、{@code count(*)}、
+     * {@code total} 等），因此不硬编码 key，而是取首行首个值并按 {@link Number} 转换。
+     * 计数失败或返回空集属于"分页信息缺失"而非查询失败，不应让整个预览接口报错，
+     * 故降级为返回本页行数，前端至少还能翻页而不是白屏。
+     *
+     * @param adapter  已解析出的适配器（与取数复用同一连接）
+     * @param countSql 已通过安全校验的计数 SQL
+     * @param rows     取数结果，作为兜底行数来源
+     * @return 整表总行数；无法获取时返回本页实际行数
+     */
+    private long resolveTotal(DataSourceAdapter adapter, String countSql, QueryResult rows) {
+        try {
+            QueryResult countResult = adapter.executeQuery(countSql, 1);
+            Long total = firstNumericValue(countResult);
+            if (total != null) {
+                return total;
+            }
+            log.warn("计数查询未返回可用数值，total 降级为本页行数: countSql={}", countSql);
+        } catch (Exception e) {
+            log.warn("计数查询失败，total 降级为本页行数: countSql={}, cause={}", countSql, e.getMessage());
+        }
+        return fallbackTotal(rows);
+    }
+
+    /**
+     * 从计数结果中取首个数值，取不到返回 null。
+     *
+     * @param countResult 计数查询结果，可为 null
+     * @return 计数结果首行首个值转换出的 long，取不到时为 null
+     */
+    private Long firstNumericValue(QueryResult countResult) {
+        if (countResult == null || countResult.getRows() == null || countResult.getRows().isEmpty()) {
+            return null;
+        }
+        Map<String, Object> firstRow = countResult.getRows().get(0);
+        if (firstRow == null || firstRow.isEmpty()) {
+            return null;
+        }
+        Object value = firstRow.values().iterator().next();
+        return value instanceof Number number ? number.longValue() : null;
+    }
+
+    /**
+     * 总行数兜底值：本页实际返回的行数。
+     *
+     * @param rows 取数结果，可为 null
+     * @return 本页行数，结果为空时返回 0
+     */
+    private long fallbackTotal(QueryResult rows) {
+        if (rows == null || rows.getRows() == null) {
+            return 0L;
+        }
+        return rows.getRows().size();
     }
 
     /**

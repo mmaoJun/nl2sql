@@ -64,25 +64,30 @@ public class MetadataController {
     }
 
     /**
-     * 预览指定表的前 N 行数据（数据源详情页使用）。
+     * 分页预览指定表的数据（数据源详情页使用）。
      *
-     * <p>只读抽样，内部只执行 {@code SELECT * FROM <表名> LIMIT <n>}。表名是被拼进 SQL 的
-     * 外部入参，是唯一的拼接注入面，因此做了双重拦截：先按标识符白名单（{@code [库名.]表名}）
-     * 过滤并确认它确实存在于该数据源的 Schema 中，再把拼接完成的整条 SQL 整体过
-     * {@link com.nl2sql.security.SqlSecurityChecker}，不因为"是自己拼的"而免检。
+     * <p>只读抽样，内部执行 {@code SELECT * FROM <表名> LIMIT <pageSize> OFFSET <offset>}
+     * 取当前页，另执行 {@code SELECT COUNT(*) FROM <表名>} 取整表总行数，一并返回给前端渲染页码。
+     * 表名是被拼进 SQL 的外部入参，是唯一的拼接注入面，因此做了双重拦截：先按标识符白名单
+     * （{@code [库名.]表名}）过滤并确认它确实存在于该数据源的 Schema 中，再把拼接完成的
+     * <b>每一条</b> SQL（取数 + 计数）整体过 {@link com.nl2sql.security.SqlSecurityChecker}，
+     * 不因为"是自己拼的"而免检。
      *
      * @param datasourceId 数据源 ID
      * @param tableName    表名（需为该数据源中真实存在的表）
-     * @param limit        预览行数，可选，默认 3，超过系统上限时按上限截断
-     * @return 预览查询结果（列名 + 数据行）
+     * @param page         页码，可选，默认 1，小于 1 时按 1 处理
+     * @param pageSize     每页行数，可选，默认 50，非正数按默认值处理，超过系统上限时按上限截断
+     * @return 预览查询结果（列名 + 当前页数据行 + 整表总行数 total）
      */
     @GetMapping("/tables/{tableName}/preview")
-    @Operation(summary = "预览表数据",
-            description = "抽样查看指定表的前 N 行数据（只读 SELECT）。limit 默认 3，超过系统上限时按上限截断")
+    @Operation(summary = "分页预览表数据",
+            description = "分页查看指定表的数据（只读 SELECT）。page 默认 1，pageSize 默认 50，"
+                    + "超过系统上限时按上限截断；响应中的 total 为整表总行数，供前端渲染页码")
     public ApiResponse<QueryResult> previewTable(@RequestParam Long datasourceId,
                                                  @PathVariable String tableName,
-                                                 @RequestParam(required = false) Integer limit) {
-        return ApiResponse.ok(metadataService.previewTable(datasourceId, tableName, limit));
+                                                 @RequestParam(required = false) Integer page,
+                                                 @RequestParam(required = false) Integer pageSize) {
+        return ApiResponse.ok(metadataService.previewTable(datasourceId, tableName, page, pageSize));
     }
 
     /**

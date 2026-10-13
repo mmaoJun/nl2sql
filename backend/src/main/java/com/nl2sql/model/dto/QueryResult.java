@@ -24,6 +24,15 @@ public class QueryResult {
     @Schema(description = "结果行数")
     private int rowCount;
 
+    /**
+     * 整表总行数（分页用）。
+     *
+     * <p>仅分页预览接口填充：它是 {@code COUNT(*)} 的结果，与 {@link #rowCount}
+     * （当前页返回的行数）语义不同，前端据此渲染页码。非分页场景保持 0。
+     */
+    @Schema(description = "整表总行数（分页用）")
+    private long total;
+
     /** 执行耗时（毫秒） */
     @Schema(description = "执行耗时（毫秒）")
     private long executionTimeMs;
