@@ -2,7 +2,7 @@
   <div class="session-list">
     <!-- 顶部：数据源管理入口（数据源选择已移到对话输入框下方，由 ChatPage 承载） -->
     <div class="sidebar-top">
-      <button class="ds-manage-btn" @click="goSettings">
+      <button class="ds-manage-btn" @click="goDatasources">
         <el-icon :size="15"><Coin /></el-icon>
         <span>数据源管理</span>
       </button>
@@ -47,9 +47,6 @@
     <div class="session-footer">
       <div class="user-avatar">{{ username.charAt(0).toUpperCase() || '?' }}</div>
       <span class="user-name">{{ username || '未登录' }}</span>
-      <button class="footer-btn" title="设置" @click="goSettings">
-        <el-icon :size="16"><Setting /></el-icon>
-      </button>
       <button class="logout-btn" title="退出登录" @click="logout">
         <el-icon :size="13"><SwitchButton /></el-icon>
         <span>退出</span>
@@ -62,7 +59,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, EditPen, Delete, Setting, SwitchButton, Coin } from '@element-plus/icons-vue'
+import { Plus, EditPen, Delete, SwitchButton, Coin } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -79,8 +76,8 @@ watch(() => router.currentRoute.value.path, () => {
   username.value = localStorage.getItem('username') || ''
 }, { immediate: true })
 
-function goSettings() {
-  router.push('/settings')
+function goDatasources() {
+  router.push('/datasources')
 }
 
 function logout() {
@@ -367,25 +364,6 @@ async function onRemove(session) {
   min-width: 0;
 }
 
-.footer-btn {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--transition);
-  flex-shrink: 0;
-}
-
-.footer-btn:hover {
-  background: var(--bg);
-  color: var(--text);
-}
-
 .logout-btn {
   display: flex;
   align-items: center;
@@ -410,7 +388,6 @@ async function onRemove(session) {
 /* 键盘可达性：新的按钮保持一致的 focus 视觉 */
 .new-session-btn:focus-visible,
 .ds-manage-btn:focus-visible,
-.footer-btn:focus-visible,
 .logout-btn:focus-visible {
   outline: 2px solid var(--primary-light);
   outline-offset: 1px;

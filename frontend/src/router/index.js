@@ -11,9 +11,14 @@ const routes = [
     component: () => import('../views/ChatPage.vue')
   },
   {
+    path: '/datasources',
+    name: 'DataSources',
+    component: () => import('../views/DataSourcePage.vue')
+  },
+  {
+    // 原「设置」页内容就是数据源管理，独立成 /datasources 后旧地址重定向兜底
     path: '/settings',
-    name: 'Settings',
-    component: () => import('../views/SettingsPage.vue')
+    redirect: '/datasources'
   },
   {
     path: '/login',
