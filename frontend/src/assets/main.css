@@ -75,10 +75,11 @@ html, body, #app {
 }
 
 .message-user {
-  background: var(--primary);
+  /* 中灰而非近黑：白字对比度足够，但整条消息不压过页面 */
+  background: #565b62;
   color: #fff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 /* 助手回答不加卡片：白底直排，与截图一致（错误/SQL/元信息块自带样式） */
