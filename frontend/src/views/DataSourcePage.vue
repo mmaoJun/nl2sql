@@ -42,9 +42,6 @@
               <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click="handleTest(ds.id)">
                 <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
               </button>
-              <button class="icon-btn" title="配置数据表" @click="openTables(ds)">
-                <el-icon :size="14"><Grid /></el-icon>
-              </button>
               <button class="icon-btn" title="编辑" @click="openEdit(ds)">
                 <el-icon :size="14"><EditPen /></el-icon>
               </button>
@@ -179,68 +176,6 @@
         </div>
       </div>
 
-      <!-- 步骤 3：添加数据表 -->
-      <div v-else class="wizard-body">
-        <div class="tables-head">
-          <h3 class="tables-title">选择数据表</h3>
-          <span class="tables-note">最多支持 100 张表</span>
-        </div>
-
-        <div class="tables-card">
-          <div class="db-list">
-            <div class="db-item active">{{ currentDbName }}</div>
-          </div>
-
-          <div class="tables-main">
-            <div class="tabs">
-              <span class="tab active">表</span>
-            </div>
-
-            <div class="tables-toolbar">
-              <div class="filter-input">
-                <el-icon :size="15"><Search /></el-icon>
-                <input v-model="tableKeyword" class="filter-ipt" placeholder="搜索表" />
-              </div>
-              <button class="tool-btn" @click="sortAsc = !sortAsc">
-                <el-icon :size="14"><Sort /></el-icon>
-                <span>排序</span>
-              </button>
-              <label class="tool-check">
-                <input type="checkbox" :checked="allSelected" @change="toggleAll($event.target.checked)" />
-                <span>全选</span>
-              </label>
-            </div>
-
-            <div v-if="tablesLoading" class="tables-state">正在读取数据表...</div>
-            <div v-else-if="tablesError" class="tables-state error">
-              <span>{{ tablesError }}</span>
-              <button class="btn-ghost sm" @click="loadTables(createdDs.id)">重试</button>
-            </div>
-            <div v-else-if="visibleTables.length === 0" class="tables-state">
-              {{ tableKeyword.trim() ? '没有匹配的表' : '该数据源下没有读到表' }}
-            </div>
-            <div v-else class="table-grid">
-              <label v-for="t in visibleTables" :key="t.tableName" class="table-item">
-                <input
-                  type="checkbox"
-                  :checked="selectedTables.has(t.tableName)"
-                  @change="toggleTable(t.tableName, $event.target.checked)"
-                />
-                <span class="table-name">{{ t.tableName }}</span>
-                <span v-if="t.comment" class="table-comment">{{ t.comment }}</span>
-              </label>
-            </div>
-
-            <div class="tables-footer">
-              <button class="btn-ghost" @click="finishWizard">跳过</button>
-              <button class="btn-primary" :disabled="savingTables" @click="saveTables">
-                <span v-if="savingTables">保存中...</span>
-                <span v-else>确认选择 ({{ selectedTables.size }})</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ============ 编辑弹窗（新增走向导，编辑沿用弹窗） ============ -->
@@ -317,26 +252,23 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin, Sort, Grid
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin
 } from '@element-plus/icons-vue'
 import { useDataSourceStore } from '../stores/datasourceStore'
 import {
-  createDataSource, updateDataSource, deleteDataSource, testDataSource, getTables
+  createDataSource, updateDataSource, deleteDataSource, testDataSource
 } from '../api/endpoints'
 
 const dsStore = useDataSourceStore()
 
-const STEP_LABELS = ['选择类型', '配置连接', '添加数据表']
+const STEP_LABELS = ['选择类型', '配置连接']
 
-/** 0 = 列表；1/2/3 = 向导步骤 */
+/** 0 = 列表；1/2 = 向导步骤 */
 const wizardStep = ref(0)
 const pickedType = ref(null)
-/** 第 3 步要配置表的数据源（新增时是刚创建的那条，从列表点进来则是既有那条） */
-const createdDs = ref(null)
 
 const showDialog = ref(false)
 const creating = ref(false)
-const savingTables = ref(false)
 const testingId = ref(null)
 const keyword = ref('')
 /** 最近一次测试连接成功的 id（仅页面内存态，不落库、刷新即清） */
@@ -344,14 +276,6 @@ const testedOk = ref(new Set())
 /** 当前编辑的数据源 id */
 const editingId = ref(null)
 const dialogType = ref({ code: 'mysql', displayName: 'MySQL', defaultPort: 3306 })
-
-// 第 3 步状态
-const tables = ref([])
-const tablesLoading = ref(false)
-const tablesError = ref('')
-const selectedTables = ref(new Set())
-const tableKeyword = ref('')
-const sortAsc = ref(true)
 
 const form = reactive({
   name: '',
@@ -418,18 +342,6 @@ const filtered = computed(() => {
   return dataSources.value.filter((ds) => `${ds.name || ''} ${ds.type || ''}`.toLowerCase().includes(kw))
 })
 
-const visibleTables = computed(() => {
-  const kw = tableKeyword.value.trim().toLowerCase()
-  const list = kw ? tables.value.filter((t) => (t.tableName || '').toLowerCase().includes(kw)) : [...tables.value]
-  return list.sort((a, b) => (sortAsc.value ? 1 : -1) * String(a.tableName).localeCompare(String(b.tableName)))
-})
-
-const allSelected = computed(() =>
-  visibleTables.value.length > 0 && visibleTables.value.every((t) => selectedTables.value.has(t.tableName))
-)
-
-const currentDbName = computed(() => createdDs.value?.databaseName || '默认库')
-
 /** 向导第 2 步按所选类型判断；编辑弹窗按 dialogType 判断 */
 const wizardApiType = computed(() => isApiTypeCode(pickedType.value?.code))
 const dialogApiType = computed(() => isApiTypeCode(dialogType.value.code))
@@ -484,7 +396,6 @@ function relativeTime(value) {
 
 function startWizard() {
   pickedType.value = null
-  createdDs.value = null
   wizardStep.value = 1
 }
 
@@ -502,7 +413,7 @@ function pickType(t) {
   wizardStep.value = 2
 }
 
-/** 第 2 步提交：先落库，再进入选表步骤 */
+/** 第 2 步提交：落库即完成新增 */
 async function submitConnection() {
   if (!form.host.trim()) {
     ElMessage.warning('请填写主机')
@@ -518,7 +429,7 @@ async function submitConnection() {
   }
   creating.value = true
   try {
-    const payload = {
+    await createDataSource({
       // 名称留空时按类型自动生成
       name: form.name.trim() || `${pickedType.value.displayName}数据源`,
       type: pickedType.value.code,
@@ -528,14 +439,10 @@ async function submitConnection() {
       username: form.username,
       password: form.password || '******',
       extraConfig: isApiTypeCode(pickedType.value.code) ? form.extraConfig.trim() || null : null
-    }
-    const res = await createDataSource(payload)
-    createdDs.value = res.data
+    })
+    ElMessage.success('数据源创建成功')
     await dsStore.fetchDataSources()
-    selectedTables.value = new Set()
-    tableKeyword.value = ''
-    wizardStep.value = 3
-    await loadTables(createdDs.value.id)
+    finishWizard()
   } catch (e) {
     // error handled by interceptor
   } finally {
@@ -543,95 +450,9 @@ async function submitConnection() {
   }
 }
 
-/** 从列表的「配置数据表」进入第 3 步 */
-async function openTables(ds) {
-  createdDs.value = ds
-  pickedType.value = typeOptions.value.find((t) => t.code === ds.type) || null
-  selectedTables.value = new Set(readSelectedTables(ds))
-  tableKeyword.value = ''
-  sortAsc.value = true
-  wizardStep.value = 3
-  await loadTables(ds.id)
-}
-
-/** 已保存的表选择：存在 extra_config.selectedTables（后端会把它并入适配器配置，JDBC 侧忽略） */
-function readSelectedTables(ds) {
-  if (!ds.extraConfig) return []
-  try {
-    const parsed = JSON.parse(ds.extraConfig)
-    return Array.isArray(parsed.selectedTables) ? parsed.selectedTables : []
-  } catch {
-    return []
-  }
-}
-
-async function loadTables(datasourceId) {
-  tablesLoading.value = true
-  tablesError.value = ''
-  try {
-    const res = await getTables(datasourceId)
-    tables.value = res.data || []
-  } catch (e) {
-    tables.value = []
-    tablesError.value = '读取数据表失败，请确认连接配置是否正确'
-  } finally {
-    tablesLoading.value = false
-  }
-}
-
-function toggleTable(name, checked) {
-  const next = new Set(selectedTables.value)
-  if (checked) next.add(name)
-  else next.delete(name)
-  selectedTables.value = next
-}
-
-function toggleAll(checked) {
-  const next = new Set(selectedTables.value)
-  visibleTables.value.forEach((t) => (checked ? next.add(t.tableName) : next.delete(t.tableName)))
-  selectedTables.value = next
-}
-
-/** 保存表选择：写回 extra_config.selectedTables（保留其余配置键） */
-async function saveTables() {
-  const ds = createdDs.value
-  if (!ds) return
-  savingTables.value = true
-  try {
-    let extra = {}
-    if (ds.extraConfig) {
-      try {
-        extra = JSON.parse(ds.extraConfig) || {}
-      } catch {
-        extra = {}
-      }
-    }
-    extra.selectedTables = [...selectedTables.value]
-    await updateDataSource(ds.id, {
-      name: ds.name,
-      type: ds.type,
-      host: ds.host,
-      port: ds.port,
-      databaseName: ds.databaseName,
-      username: ds.username,
-      password: '******',
-      extraConfig: JSON.stringify(extra)
-    })
-    ElMessage.success('数据表已保存')
-    await dsStore.fetchDataSources()
-    finishWizard()
-  } catch (e) {
-    // error handled by interceptor
-  } finally {
-    savingTables.value = false
-  }
-}
-
 function finishWizard() {
   wizardStep.value = 0
-  createdDs.value = null
   pickedType.value = null
-  tables.value = []
 }
 
 /* ---------------- 编辑弹窗 ---------------- */
@@ -1122,180 +943,6 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-top: 8px;
-}
-
-/* ---- 步骤 3：选表 ---- */
-.tables-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.tables-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.tables-note {
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-
-.tables-card {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  overflow: hidden;
-  min-height: 420px;
-}
-
-.db-list {
-  border-right: 1px solid var(--border-light);
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.db-item {
-  padding: 7px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: default;
-}
-
-.db-item.active {
-  background: var(--bg);
-  color: var(--text);
-  font-weight: 500;
-}
-
-.tables-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 14px 0;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.tab {
-  padding: 8px 14px;
-  font-size: 13px;
-  color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-}
-
-.tab.active {
-  color: var(--text);
-  font-weight: 600;
-  border-bottom-color: var(--primary);
-}
-
-.tables-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-}
-
-.tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.tool-btn:hover {
-  background: var(--bg);
-  color: var(--text);
-}
-
-.tool-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.tables-state {
-  padding: 60px 0;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.tables-state.error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.table-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 2px 16px;
-  padding: 4px 14px 16px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.table-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-  border-radius: 6px;
-  min-width: 0;
-}
-
-.table-item:hover {
-  background: var(--surface-hover);
-}
-
-.table-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.table-comment {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tables-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-light);
 }
 
 /* ---- 按钮 ---- */
