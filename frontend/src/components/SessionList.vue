@@ -9,6 +9,9 @@
       <button class="rail-btn" title="新对话" @click="$emit('create')">
         <el-icon :size="17"><Plus /></el-icon>
       </button>
+      <button class="rail-btn" title="数据源管理" @click="goDatasources">
+        <el-icon :size="17"><Coin /></el-icon>
+      </button>
       <div class="rail-spacer"></div>
       <button
         class="rail-avatar"
@@ -27,17 +30,19 @@
           </span>
           <span class="brand-name">NL2SQL</span>
         </div>
-        <button class="header-btn" title="数据源管理" @click="goDatasources">
-          <el-icon :size="16"><Setting /></el-icon>
-        </button>
         <button class="header-btn" title="收起侧栏" @click="$emit('update:collapsed', true)">
           <el-icon :size="16"><Fold /></el-icon>
         </button>
       </div>
 
-      <button class="new-session-btn" @click="$emit('create')">
+      <button class="sidebar-nav-btn" @click="$emit('create')">
         <el-icon :size="15"><Plus /></el-icon>
         <span>新对话</span>
+      </button>
+
+      <button class="sidebar-nav-btn" @click="goDatasources">
+        <el-icon :size="15"><Coin /></el-icon>
+        <span>数据源管理</span>
       </button>
 
       <div class="session-section-title">最近对话</div>
@@ -87,7 +92,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Plus, EditPen, Delete, Setting, SwitchButton, Expand, Fold } from '@element-plus/icons-vue'
+import { Plus, EditPen, Delete, SwitchButton, Expand, Fold, Coin } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -317,7 +322,7 @@ async function onRemove(session) {
 }
 
 /* ---- 中部：新对话 + 最近对话 ---- */
-.new-session-btn {
+.sidebar-nav-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -334,7 +339,7 @@ async function onRemove(session) {
   transition: all var(--transition);
 }
 
-.new-session-btn:hover {
+.sidebar-nav-btn:hover {
   background: var(--bg);
   color: var(--text);
 }
@@ -526,7 +531,7 @@ async function onRemove(session) {
 }
 
 /* 键盘可达性：按钮保持一致的 focus 视觉 */
-.new-session-btn:focus-visible,
+.sidebar-nav-btn:focus-visible,
 .header-btn:focus-visible,
 .rail-btn:focus-visible,
 .rail-avatar:focus-visible,
