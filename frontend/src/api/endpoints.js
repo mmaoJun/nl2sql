@@ -20,7 +20,9 @@ export const getSupportedTypes = () => client.get('/datasources/supported-types'
 export const createDataSource = (data) => client.post('/datasources', data)
 export const updateDataSource = (id, data) => client.put(`/datasources/${id}`, data)
 export const deleteDataSource = (id) => client.delete(`/datasources/${id}`)
-export const testDataSource = (id) => client.post(`/datasources/${id}/test`)
+// silent：连接失败的语义是「HTTP 200 + 业务码 500」，批量测试时逐个弹提示会刷屏，
+// 改由调用方按数据源渲染状态
+export const testDataSource = (id) => client.post(`/datasources/${id}/test`, null, { silent: true })
 
 // 会话
 export const getSessions = () => client.get('/sessions')

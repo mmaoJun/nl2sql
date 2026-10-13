@@ -7,10 +7,19 @@
           <h2 class="page-title">数据源</h2>
           <p class="page-desc">在这里查看和管理您的数据源</p>
         </div>
-        <button class="btn-primary" @click="startWizard">
-          <el-icon :size="14"><Plus /></el-icon>
-          <span>添加数据源</span>
-        </button>
+        <div class="header-btns">
+          <button class="btn-ghost" :disabled="testingAll || dataSources.length === 0" @click="testAll">
+            <el-icon :size="14" :class="{ spinning: testingAll }">
+              <Loading v-if="testingAll" />
+              <Connection v-else />
+            </el-icon>
+            <span>{{ testingAll ? '测试中...' : '一键测试连接' }}</span>
+          </button>
+          <button class="btn-primary" @click="startWizard">
+            <el-icon :size="14"><Plus /></el-icon>
+            <span>添加数据源</span>
+          </button>
+        </div>
       </div>
 
       <div class="filter-row">
@@ -32,9 +41,12 @@
             </span>
             <span class="card-name">{{ ds.name }}</span>
             <span class="type-badge">{{ (ds.type || '').toUpperCase() }}</span>
-            <el-tooltip v-if="testedOk.has(ds.id)" content="最近一次测试连接成功" placement="top" :show-after="80">
-              <el-icon :size="16" class="card-check"><CircleCheck /></el-icon>
-            </el-tooltip>
+            <span class="conn-status" :class="connStatus[ds.id] || 'idle'">
+              <el-icon v-if="connStatus[ds.id] === 'testing'" :size="13" class="spinning"><Loading /></el-icon>
+              <el-icon v-else-if="connStatus[ds.id] === 'ok'" :size="13"><CircleCheck /></el-icon>
+              <el-icon v-else-if="connStatus[ds.id] === 'fail'" :size="13"><CircleClose /></el-icon>
+              <span>{{ CONN_LABELS[connStatus[ds.id]] || CONN_LABELS.idle }}</span>
+            </span>
           </div>
 
           <p class="card-desc">{{ describe(ds) }}</p>
@@ -43,8 +55,8 @@
             <span class="card-meta">{{ relativeTime(ds.updatedAt) }}</span>
             <div class="card-actions">
               <!-- 卡片整体进详情，三个操作按钮各自 stop，避免顺带跳转 -->
-              <button class="icon-btn" title="测试连接" :disabled="testingId === ds.id" @click.stop="handleTest(ds.id)">
-                <el-icon :size="14"><Loading v-if="testingId === ds.id" /><Connection v-else /></el-icon>
+              <button class="icon-btn" title="测试连接" :disabled="connStatus[ds.id] === 'testing'" @click.stop="testOne(ds.id)">
+                <el-icon :size="14"><Loading v-if="connStatus[ds.id] === 'testing'" /><Connection v-else /></el-icon>
               </button>
               <button class="icon-btn" title="编辑" @click.stop="openEdit(ds)">
                 <el-icon :size="14"><EditPen /></el-icon>
@@ -268,7 +280,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, Check, Coin, ArrowLeft
+  Plus, Search, EditPen, Delete, Connection, Loading, Close, CircleCheck, CircleClose, Check, Coin, ArrowLeft
 } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { useDataSourceStore } from '../stores/datasourceStore'
@@ -288,10 +300,11 @@ const pickedType = ref(null)
 
 const showDialog = ref(false)
 const creating = ref(false)
-const testingId = ref(null)
 const keyword = ref('')
-/** 最近一次测试连接成功的 id（仅页面内存态，不落库、刷新即清） */
-const testedOk = ref(new Set())
+/** 连接情况：id → 'testing' | 'ok' | 'fail'，缺省表示未测试（仅页面内存态，刷新即清） */
+const connStatus = reactive({})
+const testingAll = ref(false)
+const CONN_LABELS = { idle: '未测试', testing: '测试中', ok: '正常', fail: '连接失败' }
 /** 当前编辑的数据源 id */
 const editingId = ref(null)
 const dialogType = ref({ code: 'mysql', displayName: 'MySQL', defaultPort: 3306 })
@@ -540,20 +553,43 @@ async function submitEdit() {
 
 /* ---------------- 列表操作 ---------------- */
 
-async function handleTest(id) {
-  testingId.value = id
+/** 单个数据源测连接：结果只记在内存里，卡片上的状态标签据此渲染 */
+async function testOne(id) {
+  connStatus[id] = 'testing'
   try {
     const res = await testDataSource(id)
-    if (res.data) {
-      testedOk.value = new Set(testedOk.value).add(id)
-      ElMessage.success('连接成功')
-    } else {
-      ElMessage.error('连接失败')
-    }
+    connStatus[id] = res.data ? 'ok' : 'fail'
   } catch (e) {
-    // 连接失败时后端返回业务码 500 + "连接失败"，提示已由拦截器弹出
-  } finally {
-    testingId.value = null
+    // 后端连接失败是「HTTP 200 + 业务码 500」，拦截器按 silent 跳过提示
+    connStatus[id] = 'fail'
+  }
+}
+
+/** 小并发池：一次最多 3 个，避免十几个数据源同时建连接把后端压住 */
+async function runPool(items, size, worker) {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (cursor < items.length) {
+      await worker(items[cursor++])
+    }
+  })
+  await Promise.all(runners)
+}
+
+/** 一键测试全部连接；进页面时的自动测试用 silentSummary 跳过汇总提示 */
+async function testAll({ silentSummary = false } = {}) {
+  if (testingAll.value) return
+  const ids = dataSources.value.map((d) => d.id)
+  if (!ids.length) return
+  testingAll.value = true
+  await runPool(ids, 3, testOne)
+  testingAll.value = false
+  if (silentSummary) return
+  const failed = ids.filter((id) => connStatus[id] === 'fail').length
+  if (failed === 0) {
+    ElMessage.success(`${ids.length} 个数据源连接均正常`)
+  } else {
+    ElMessage.warning(`${ids.length} 个数据源：${ids.length - failed} 个正常，${failed} 个失败`)
   }
 }
 
@@ -576,9 +612,10 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(() => {
-  dsStore.fetchDataSources()
-  dsStore.fetchSupportedTypes()
+onMounted(async () => {
+  await Promise.all([dsStore.fetchDataSources(), dsStore.fetchSupportedTypes()])
+  // 进页面就把连接情况跑出来，卡片上直接能看到可用性；自动跑不弹汇总提示
+  testAll({ silentSummary: true })
 })
 </script>
 
@@ -739,9 +776,53 @@ onMounted(() => {
   letter-spacing: 0.3px;
 }
 
-.card-check {
-  color: var(--primary);
+/* 连接情况标签：正常走灰阶 success，失败用 theme 的 error 色（黑白灰里唯一的语义色） */
+.conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.conn-status.ok {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.conn-status.fail {
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.header-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.header-btns .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-btns .btn-ghost:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .card-desc {

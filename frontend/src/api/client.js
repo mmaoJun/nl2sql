@@ -44,7 +44,8 @@ client.interceptors.response.use(
   (response) => {
     const data = response.data
     if (data.code && data.code !== 200) {
-      ElMessage.error(data.message || '请求失败')
+      // config.silent：调用方自己渲染错误态（如批量测试连接，逐个弹提示会刷屏）
+      if (!response.config.silent) ElMessage.error(data.message || '请求失败')
       // 把业务码挂到 Error 上：调用方要区分"会话已不存在"（3001，该清掉本地 id 重拉列表）
       // 和网络/后端故障（该保留列表只给重试入口），靠匹配中文消息文本判断是脆的
       const error = new Error(data.message)
@@ -58,7 +59,7 @@ client.interceptors.response.use(
     // HTTP 403（不是 401，T10 实测），两个状态码都按"未登录"处理统一跳登录
     if (error.response?.status === 401 || error.response?.status === 403) {
       handleUnauthenticated()
-    } else {
+    } else if (!error.config?.silent) {
       ElMessage.error(error.response?.data?.message || '网络错误')
     }
     return Promise.reject(error)

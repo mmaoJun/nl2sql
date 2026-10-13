@@ -11,10 +11,16 @@
         <span class="crumb-current">{{ ds ? ds.name : '数据源' }}</span>
       </div>
       <div class="header-actions">
-        <span v-if="statusReady" class="status-ok">
-          <el-icon :size="13"><CircleCheck /></el-icon>
-          <span>正常可用</span>
+        <span class="conn-status" :class="connStatus || 'idle'">
+          <el-icon v-if="connStatus === 'testing'" :size="13" class="spinning"><Loading /></el-icon>
+          <el-icon v-else-if="connStatus === 'ok'" :size="13"><CircleCheck /></el-icon>
+          <el-icon v-else-if="connStatus === 'fail'" :size="13"><CircleClose /></el-icon>
+          <span>{{ CONN_LABELS[connStatus] || CONN_LABELS.idle }}</span>
         </span>
+        <button class="ghost-btn" :disabled="connStatus === 'testing'" @click="testConnection">
+          <el-icon :size="13"><Connection /></el-icon>
+          <span>测试连接</span>
+        </button>
         <button class="ghost-btn" :disabled="refreshing" @click="handleRefresh">
           <el-icon :size="13" :class="{ spinning: refreshing }"><Refresh /></el-icon>
           <span>重新同步</span>
@@ -198,11 +204,12 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, ArrowRight, Search, Refresh, Tickets, Grid, InfoFilled, CaretRight, CircleCheck
+  ArrowLeft, ArrowRight, Search, Refresh, Connection, Loading, Tickets, Grid, InfoFilled, CaretRight,
+  CircleCheck, CircleClose
 } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { useDataSourceStore } from '../stores/datasourceStore'
-import { getTables, getColumns, refreshMetadata, getTablePreview } from '../api/endpoints'
+import { getTables, getColumns, refreshMetadata, getTablePreview, testDataSource } from '../api/endpoints'
 
 const props = defineProps({
   datasourceId: { type: Number, required: true }
@@ -220,7 +227,10 @@ const tab = ref('columns')
 
 /** 列表/向导里刚测试过或加载过的数据源直接用；直接输 URL 进来时 store 可能为空 */
 const ds = computed(() => dsStore.dataSources.find((d) => d.id === props.datasourceId) || null)
-const statusReady = computed(() => Boolean(ds.value))
+
+/** 连接情况：null = 未测试；进页面自动测一次，也可以手动点「测试连接」 */
+const connStatus = ref(null)
+const CONN_LABELS = { idle: '未测试', testing: '测试中', ok: '连接正常', fail: '连接失败' }
 
 const filteredTables = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -347,6 +357,17 @@ async function handleRefresh() {
   }
 }
 
+/** 测连接：失败语义是「HTTP 200 + 业务码 500」，拦截器已按 silent 跳过提示，这里落状态 */
+async function testConnection() {
+  connStatus.value = 'testing'
+  try {
+    const res = await testDataSource(props.datasourceId)
+    connStatus.value = res.data ? 'ok' : 'fail'
+  } catch (e) {
+    connStatus.value = 'fail'
+  }
+}
+
 function backToList() {
   router.push('/datasources')
 }
@@ -355,6 +376,7 @@ onMounted(async () => {
   if (!dsStore.dataSources.length) await dsStore.fetchDataSources()
   await loadTables()
   loading.value = false
+  testConnection()
 })
 
 // 换数据源（同路由不同 id）时整体重置，避免残留上一张表的选择
@@ -437,12 +459,26 @@ watch(() => props.datasourceId, () => {
   flex-shrink: 0;
 }
 
-.status-ok {
+/* 连接情况标签：与数据源列表同一套配色（正常走灰阶 success，失败用 error） */
+.conn-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 13px;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.conn-status.ok {
   color: var(--success);
+  background: var(--success-bg);
+}
+
+.conn-status.fail {
+  color: var(--error);
+  background: var(--error-bg);
 }
 
 .ghost-btn {
