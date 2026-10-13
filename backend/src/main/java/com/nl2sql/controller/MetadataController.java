@@ -3,6 +3,7 @@ package com.nl2sql.controller;
 import com.nl2sql.model.ColumnInfo;
 import com.nl2sql.model.TableInfo;
 import com.nl2sql.model.dto.ApiResponse;
+import com.nl2sql.model.dto.QueryResult;
 import com.nl2sql.service.MetadataService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,7 +20,7 @@ import java.util.List;
 /**
  * 元数据浏览控制器（T12 从旧项目最小移植，路径与形状逐字对齐）。
  *
- * <p>提供数据源的表结构查询能力，包括表列表、字段详情、缓存刷新。
+ * <p>提供数据源的表结构查询能力，包括表列表、字段详情、数据预览、缓存刷新。
  * 元数据通过 Redis 缓存（默认 TTL 3600s），Redis 不可用时由
  * {@link MetadataService} 内部降级为直连查询，对调用方透明。
  *
@@ -40,10 +41,10 @@ public class MetadataController {
      * 获取指定数据源的表列表（精简信息，不含字段详情）。
      *
      * @param datasourceId 数据源 ID
-     * @return 表信息列表，每项包含表名和表注释
+     * @return 表信息列表，每项包含表名、表注释与列数量（columns 仍为 null）
      */
     @GetMapping("/tables")
-    @Operation(summary = "获取表列表", description = "查询指定数据源的所有表（精简信息）")
+    @Operation(summary = "获取表列表", description = "查询指定数据源的所有表（精简信息，含列数量）")
     public ApiResponse<List<TableInfo>> getTables(@RequestParam Long datasourceId) {
         return ApiResponse.ok(metadataService.getTables(datasourceId));
     }
@@ -60,6 +61,28 @@ public class MetadataController {
     public ApiResponse<List<ColumnInfo>> getColumns(@RequestParam Long datasourceId,
                                                     @PathVariable String tableName) {
         return ApiResponse.ok(metadataService.getColumns(datasourceId, tableName));
+    }
+
+    /**
+     * 预览指定表的前 N 行数据（数据源详情页使用）。
+     *
+     * <p>只读抽样，内部只执行 {@code SELECT * FROM <表名> LIMIT <n>}。表名是被拼进 SQL 的
+     * 外部入参，是唯一的拼接注入面，因此做了双重拦截：先按标识符白名单（{@code [库名.]表名}）
+     * 过滤并确认它确实存在于该数据源的 Schema 中，再把拼接完成的整条 SQL 整体过
+     * {@link com.nl2sql.security.SqlSecurityChecker}，不因为"是自己拼的"而免检。
+     *
+     * @param datasourceId 数据源 ID
+     * @param tableName    表名（需为该数据源中真实存在的表）
+     * @param limit        预览行数，可选，默认 3，超过系统上限时按上限截断
+     * @return 预览查询结果（列名 + 数据行）
+     */
+    @GetMapping("/tables/{tableName}/preview")
+    @Operation(summary = "预览表数据",
+            description = "抽样查看指定表的前 N 行数据（只读 SELECT）。limit 默认 3，超过系统上限时按上限截断")
+    public ApiResponse<QueryResult> previewTable(@RequestParam Long datasourceId,
+                                                 @PathVariable String tableName,
+                                                 @RequestParam(required = false) Integer limit) {
+        return ApiResponse.ok(metadataService.previewTable(datasourceId, tableName, limit));
     }
 
     /**
