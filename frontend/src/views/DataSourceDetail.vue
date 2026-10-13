@@ -137,16 +137,8 @@
           <div v-if="tab === 'columns'" class="columns-panel" v-loading="columnsLoading">
             <div class="grid-head">
               <span class="c-col">列名</span>
-              <span class="c-comment">
-                <span>备注</span>
-              </span>
+              <span class="c-comment"><span>备注</span></span>
               <span class="c-semantic">语义类型</span>
-              <span class="c-hide">
-                <span>隐藏</span>
-                <el-tooltip content="隐藏状态暂未落库，刷新页面后重置" placement="top" :show-after="80">
-                  <el-icon :size="13" class="hint-icon"><InfoFilled /></el-icon>
-                </el-tooltip>
-              </span>
             </div>
             <template v-for="col in columns" :key="col.columnName">
               <div class="grid-row">
@@ -159,13 +151,6 @@
                   <span>{{ col.comment || '-' }}</span>
                 </span>
                 <span class="c-semantic">{{ semanticType(col) }}</span>
-                <span class="c-hide">
-                  <el-switch
-                    size="small"
-                    :model-value="isHidden(col.columnName)"
-                    @change="(v) => setHidden(col.columnName, v)"
-                  />
-                </span>
               </div>
               <div v-if="expanded.has(col.columnName)" class="grid-row-detail">
                 <span class="detail-pair"><b>数据类型</b>{{ col.dataType || '-' }}</span>
@@ -266,14 +251,6 @@ const preview = computed(() => previewCache[selectedTable.value] || null)
 
 /** 展开的列（看数据类型/可空/默认值） */
 const expanded = ref(new Set())
-
-/** 隐藏开关只存本地（后端没有该字段），刷新即清；key 用 表::列 防止同名列串台 */
-const hidden = reactive({})
-const hiddenKey = (columnName) => `${selectedTable.value}::${columnName}`
-const isHidden = (columnName) => Boolean(hidden[hiddenKey(columnName)])
-function setHidden(columnName, value) {
-  hidden[hiddenKey(columnName)] = value
-}
 
 function toggleExpand(columnName) {
   const next = new Set(expanded.value)
@@ -863,7 +840,7 @@ watch(() => props.datasourceId, () => {
 .grid-head,
 .grid-row {
   display: grid;
-  grid-template-columns: minmax(170px, 1.1fr) minmax(190px, 2fr) 120px 100px;
+  grid-template-columns: minmax(170px, 1.1fr) minmax(190px, 2fr) 120px;
   align-items: center;
   gap: 12px;
   padding: 9px 16px;
@@ -937,17 +914,6 @@ watch(() => props.datasourceId, () => {
 
 .c-semantic {
   color: var(--text-secondary);
-}
-
-.c-hide {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hint-icon {
-  color: var(--text-muted);
-  cursor: help;
 }
 
 .grid-row-detail {
