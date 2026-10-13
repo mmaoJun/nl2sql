@@ -92,7 +92,7 @@
       </aside>
 
       <!-- ============ 右栏：基本信息 / 表详情 ============ -->
-      <section class="detail-content">
+      <section class="detail-content" :class="{ 'preview-mode': tab === 'preview' && selectedTable }">
         <!-- 基本信息：库名 + 表数/列数 + 表清单 -->
         <template v-if="!selectedTable">
           <div class="content-title">
@@ -184,7 +184,7 @@
             <template v-if="preview && preview.success">
               <div class="preview-box">
                 <div class="preview-table" v-loading="previewLoading">
-                  <el-table :data="preview.rows" size="small" max-height="460" style="width: 100%">
+                  <el-table :data="preview.rows" size="small" height="100%" style="width: 100%">
                     <el-table-column type="index" label="#" width="48" align="center" />
                     <el-table-column
                       v-for="c in preview.columns"
@@ -786,6 +786,38 @@ watch(() => props.datasourceId, () => {
   min-width: 0;
   padding: 20px 24px 28px;
   overflow-y: auto;
+}
+
+/* 预览态：整栏改为纵向 flex，让预览框吃掉剩余高度（表体自己滚，页脚钉在底部），
+   否则表格按内容高度铺开后下方留一大片空白 */
+.detail-content.preview-mode {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.detail-content.preview-mode .table-head,
+.detail-content.preview-mode .tabs {
+  flex-shrink: 0;
+}
+
+.detail-content.preview-mode .preview-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-content.preview-mode .preview-box {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-content.preview-mode .preview-table {
+  flex: 1;
+  min-height: 0;
 }
 
 .content-title {
