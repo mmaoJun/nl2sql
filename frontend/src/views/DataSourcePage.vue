@@ -148,8 +148,10 @@
               <input
                 v-model="form.databaseName"
                 class="form-input"
-                :placeholder="wizardApiType ? '接口基础路径，例如 /api' : '输入数据库名称，留空表示使用连接默认库'"
+                :placeholder="wizardApiType ? '接口基础路径，例如 /api' : '输入数据库名称'"
               />
+              <span v-if="!wizardApiType" class="field-hint">仅支持单个数据库；留空表示使用连接默认库</span>
+              <span v-if="dbNameError" class="field-error">数据库名只支持一个，请不要使用逗号</span>
             </div>
             <div v-if="wizardApiType" class="form-group">
               <label class="form-label">高级配置（JSON：headers / tables）</label>
@@ -264,6 +266,8 @@
             <div class="form-group">
               <label class="form-label">{{ dialogApiType ? '基础路径' : '数据库名' }}</label>
               <input v-model="form.databaseName" class="form-input" :placeholder="dialogApiType ? '/api' : 'my_database'" />
+              <span v-if="!dialogApiType" class="field-hint">仅支持单个数据库；留空表示使用连接默认库</span>
+              <span v-if="dbNameError" class="field-error">数据库名只支持一个，请不要使用逗号</span>
             </div>
             <div class="form-row">
               <div class="form-group flex-1">
@@ -435,6 +439,9 @@ const extraConfigError = computed(() => {
   }
 })
 
+// 数据库名只支持单个：逗号（中英文）视为误输入，提交前拦下
+const dbNameError = computed(() => /[,，]/.test(form.databaseName || ''))
+
 function typeColor(code) {
   return TYPE_COLORS[code] || '#64748b'
 }
@@ -489,6 +496,10 @@ function pickType(t) {
 async function submitConnection() {
   if (!form.host.trim()) {
     ElMessage.warning('请填写主机')
+    return
+  }
+  if (dbNameError.value) {
+    ElMessage.warning('数据库名只支持一个，请不要使用逗号')
     return
   }
   creating.value = true
@@ -637,6 +648,10 @@ function closeDialog() {
 async function submitEdit() {
   if (!form.name.trim() || !form.host.trim()) {
     ElMessage.warning('请填写名称与主机')
+    return
+  }
+  if (dbNameError.value) {
+    ElMessage.warning('数据库名只支持一个，请不要使用逗号')
     return
   }
   creating.value = true
@@ -1370,6 +1385,11 @@ onMounted(() => {
 .field-error {
   font-size: 12px;
   color: var(--error);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* ---- 编辑弹窗 ---- */
