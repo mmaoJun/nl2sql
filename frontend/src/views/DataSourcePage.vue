@@ -24,7 +24,7 @@
       <div v-if="filtered.length" class="ds-grid">
         <div v-for="ds in filtered" :key="ds.id" class="ds-card">
           <div class="card-head">
-            <span class="type-icon" :style="{ background: typeColor(ds.type) }">
+            <span class="type-icon">
               <svg v-if="brandOf(ds.type)" :viewBox="brandOf(ds.type).viewBox" fill="currentColor" aria-hidden="true">
                 <path :d="brandOf(ds.type).path" />
               </svg>
@@ -97,7 +97,7 @@
               :class="{ active: pickedType && pickedType.code === t.code }"
               @click="pickType(t)"
             >
-              <span class="type-icon lg" :style="{ background: typeColor(t.code) }">
+              <span class="type-icon lg">
                 <svg v-if="brandOf(t.code)" :viewBox="brandOf(t.code).viewBox" fill="currentColor" aria-hidden="true">
                   <path :d="brandOf(t.code).path" />
                 </svg>
@@ -116,7 +116,7 @@
       <div v-else-if="wizardStep === 2" class="wizard-body">
         <div class="connect-card">
           <div class="connect-illustration">
-            <span class="type-icon xl" :style="{ background: typeColor(pickedType.code) }">
+            <span class="type-icon xl">
               <svg v-if="brandOf(pickedType.code)" :viewBox="brandOf(pickedType.code).viewBox" fill="currentColor" aria-hidden="true">
                 <path :d="brandOf(pickedType.code).path" />
               </svg>
@@ -297,17 +297,6 @@ const form = reactive({
   extraConfig: ''
 })
 
-// 类型图标底色走灰阶梯度（黑白灰主题）。最浅两档压深过：白色品牌标识
-// 落在 #9ca0a3 这类浅灰上对比度不足（约 2:1），辨识度差
-const TYPE_COLORS = {
-  mysql: '#26282c',
-  postgresql: '#3f4247',
-  hive: '#55585c',
-  hdfs: '#6b6e72',
-  rest: '#75787c',
-  graphql: '#86898d'
-}
-
 // 卡片副文案（截图里是版本号，我们换成连接方式与默认端口）
 const TYPE_HINTS = {
   mysql: '关系型数据库 · 3306',
@@ -374,10 +363,6 @@ const extraConfigError = computed(() => {
 
 // 数据库名只支持单个：逗号（中英文）视为误输入，提交前拦下
 const dbNameError = computed(() => /[,，]/.test(form.databaseName || ''))
-
-function typeColor(code) {
-  return TYPE_COLORS[code] || '#64748b'
-}
 
 /** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */
 function brandOf(code) {
@@ -674,12 +659,15 @@ onMounted(() => {
   gap: 10px;
 }
 
-/* 品牌标识尺寸继承此处 font-size（svg / el-icon 均为 1em），三个档位只需改字号 */
+/* 统一白底方块承载品牌标识（卡片本身也是白底，靠一圈浅描边定形）。
+   标识尺寸继承此处 font-size（svg / el-icon 均为 1em），三个档位只需改字号 */
 .type-icon {
   width: 34px;
   height: 34px;
+  border: 1px solid var(--border);
   border-radius: 9px;
-  color: #fff;
+  background: var(--surface);
+  color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
