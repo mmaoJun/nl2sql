@@ -14,6 +14,7 @@ import com.nl2sql.model.DataSource;
 import com.nl2sql.model.User;
 import com.nl2sql.model.dto.ApiResponse;
 import com.nl2sql.model.dto.LoginResponse;
+import com.nl2sql.model.dto.QueryResult;
 import com.nl2sql.model.vo.AgentTraceItem;
 import com.nl2sql.model.vo.ChatResult;
 import com.nl2sql.model.vo.TurnVO;
@@ -50,7 +51,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>场景（同一会话连续两问，第二问脱离历史就答不对）：
  * <ol>
  *   <li>第一问「users 表中共有多少位用户？」（不带 sessionId → 服务端自动新建会话）——
- *       断言 answer 命中真实数据 200、{@code ChatResult.sessionId} 非空、会话标题取首问；</li>
+ *       断言 answer 命中库里真实用户数（跑前现取，见 {@code realUserCount}）、{@code ChatResult.sessionId}
+ *       非空、会话标题取首问；</li>
  *   <li>第二问「我刚才问的第一个问题是什么？」（带上第一问返回的 sessionId）——
  *       答案只存在于上一轮的对话历史里，重新查库也查不到，
  *       只有把最近轮次注入 Agent 才可能答对；</li>
@@ -76,9 +78,8 @@ class SessionMemoryIntegrationTest {
     /** 测试内注册用户所用密码（仅测试进程内使用） */
     private static final String PASSWORD = "t11-memory-pass";
 
-    /** 第一问与期望的用户数（nlp2sql_test.users 真实行数） */
+    /** 第一问；期望的用户数不写死，由 {@link #realUserCount} 从库里现取 */
     private static final String QUESTION_1 = "users 表中共有多少位用户？";
-    private static final String EXPECTED_COUNT_1 = "200";
 
     /**
      * 第二问：脱离历史无法回答的追问 —— 上一轮的提问内容只存在于会话历史里，
@@ -132,14 +133,17 @@ class SessionMemoryIntegrationTest {
         Long datasourceId = nlp2sqlTestDatasourceId();
         Session login = registerAndLogin();
         Long userId = userIdOf(login.username());
+        // 期望值从库里现取：写死行数会在数据集变化后假失败（实测该库 users 从 200 行变成 100 行，
+        // 而模型答的 100 是对的），现取同时仍能验证"模型是否真的查了真实数据"
+        String expectedUserCount = String.valueOf(realUserCount(datasourceId, login.token()));
 
         // ── 第一问：不带 sessionId，服务端自动新建会话 ──
         ChatResult first = chat(datasourceId, QUESTION_1, null, login.token());
         assertNotNull(first.getSessionId(), "自动新建会话后 ChatResult.sessionId 不应为空");
         createdSessionId = first.getSessionId();
         assertNotNull(first.getAnswer(), "第一问 answer 不应为 null");
-        assertTrue(first.getAnswer().contains(EXPECTED_COUNT_1),
-                "第一问应命中真实用户数 " + EXPECTED_COUNT_1 + "，实际回答: " + first.getAnswer());
+        assertTrue(first.getAnswer().contains(expectedUserCount),
+                "第一问应命中真实用户数 " + expectedUserCount + "，实际回答: " + first.getAnswer());
 
         ChatSession session = sessionMapper.selectById(createdSessionId);
         assertNotNull(session, "自动新建的会话应落库");
@@ -166,7 +170,7 @@ class SessionMemoryIntegrationTest {
         assertEquals(firstTurnId, firstTurn.getId(), "轮次应按 id 正序返回");
         assertFalse(secondTurn.getId() <= firstTurn.getId(), "第二轮的 id 应更大（时间正序）");
 
-        assertTurn(firstTurn, QUESTION_1, datasourceId, first.getAnswer(), EXPECTED_COUNT_1, true);
+        assertTurn(firstTurn, QUESTION_1, datasourceId, first.getAnswer(), expectedUserCount, true);
         assertTurn(secondTurn, QUESTION_2, datasourceId, second.getAnswer(), null, false);
 
         // ── 审计归因：最新一条审计应指向第二轮（sessionId + turnId） ──
@@ -276,6 +280,28 @@ class SessionMemoryIntegrationTest {
         return turnMapper.selectList(new LambdaQueryWrapper<ChatTurn>()
                 .eq(ChatTurn::getSessionId, sessionId)
                 .orderByAsc(ChatTurn::getId));
+    }
+
+    /**
+     * 从库里取 users 表的真实行数，作为第一问的期望值。
+     *
+     * <p>走既有的预览接口：它的 {@code total} 就是 {@code COUNT(*)}，且表名过白名单、
+     * SQL 过安全校验，比测试里自己拼 SQL 更贴近产品真实口径。
+     *
+     * @param datasourceId nlp2sql_test 数据源 id
+     * @param token        登录 token（接口受 JWT 保护）
+     * @return 整表总行数
+     */
+    private long realUserCount(Long datasourceId, String token) {
+        ResponseEntity<ApiResponse<QueryResult>> response = restTemplate.exchange(
+                "/api/v1/metadata/tables/users/preview?datasourceId=" + datasourceId + "&page=1&pageSize=1",
+                HttpMethod.GET, new HttpEntity<>(authHeaders(token)),
+                new ParameterizedTypeReference<>() {
+                });
+        QueryResult data = response.getBody() == null ? null : response.getBody().getData();
+        assertNotNull(data, "users 表行数探测失败：预览接口 data 为空");
+        assertTrue(data.isSuccess(), "users 表行数探测失败: " + data.getErrorMessage());
+        return data.getTotal();
     }
 
     /** 测试内注册的登录会话：用户名 + token（token 只在进程内传递，不落盘、不进报告）。 */
