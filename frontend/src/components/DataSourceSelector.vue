@@ -48,8 +48,11 @@
               <span class="ds-item-name">{{ ds.name }}</span>
               <span class="ds-item-type">{{ (ds.type || '').toUpperCase() }}</span>
             </span>
-            <span class="ds-item-conn" :class="dsStore.connStatus[ds.id] || 'idle'">
-              {{ CONN_LABELS[dsStore.connStatus[ds.id]] || CONN_LABELS.idle }}
+            <span class="ds-item-conn" :class="connOf(ds.id)" :title="CONN_LABELS[connOf(ds.id)]">
+              <el-icon v-if="connOf(ds.id) === 'testing'" :size="14" class="spinning"><Loading /></el-icon>
+              <el-icon v-else-if="connOf(ds.id) === 'ok'" :size="14"><CircleCheck /></el-icon>
+              <el-icon v-else-if="connOf(ds.id) === 'fail'" :size="14"><CircleClose /></el-icon>
+              <el-icon v-else :size="14"><QuestionFilled /></el-icon>
             </span>
             <el-icon v-if="ds.id === modelValue" :size="14" class="ds-item-check"><Check /></el-icon>
           </button>
@@ -75,7 +78,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Search, Coin, Check, Plus, Operation } from '@element-plus/icons-vue'
+import { ArrowDown, Search, Coin, Check, Plus, Operation, Loading, CircleCheck, CircleClose, QuestionFilled } from '@element-plus/icons-vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { useDataSourceStore, CONN_LABELS } from '../stores/datasourceStore'
 
@@ -114,6 +117,11 @@ const filtered = computed(() => {
 /** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */
 function brandOf(code) {
   return BRAND_ICONS[code] || null
+}
+
+/** 连接状态：没测过的一律算 idle，模板与样式都按这一套 key 走 */
+function connOf(id) {
+  return dsStore.connStatus[id] || 'idle'
 }
 
 function pick(ds) {
@@ -302,11 +310,12 @@ function goManage() {
   color: var(--text-muted);
 }
 
-/* 可用性贴在行的右侧：名称长度不一时也能对齐成一列，方便一眼扫过去对比
-   正常绿、失败红、未测过/测试中保持灰 */
+/* 可用性贴在行的右侧：只用一个图标，语义靠 title 兜底。
+   绿色对勾=正常、红色叉=连接失败、灰色问号=未测试、灰色旋转=测试中 */
 .ds-popover .ds-item-conn {
   flex-shrink: 0;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
 }
 
@@ -316,6 +325,16 @@ function goManage() {
 
 .ds-popover .ds-item-conn.fail {
   color: var(--error);
+}
+
+.ds-popover .ds-item-conn .spinning {
+  animation: ds-conn-spin 1s linear infinite;
+}
+
+@keyframes ds-conn-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ds-popover .ds-item-check {
