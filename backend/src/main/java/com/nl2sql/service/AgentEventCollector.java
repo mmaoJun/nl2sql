@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nl2sql.model.vo.AgentTraceItem;
 import com.nl2sql.model.vo.ChatResult;
 import com.nl2sql.model.vo.ChatStreamEvent;
+import com.nl2sql.model.vo.SqlResultPayload;
 import com.nl2sql.model.vo.TextDeltaPayload;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -38,7 +39,9 @@ import java.util.Map;
  *   <li>{@code TextBlockDeltaEvent} → {@code TEXT_DELTA}（正文增量；本地通道可能缺失）</li>
  *   <li>{@code ToolCallEndEvent}（兜底 {@code ToolResultStartEvent}）→ {@code TOOL_CALL}，
  *       此时入参增量已拼全；每次调用只发一次</li>
- *   <li>{@code ToolResultEndEvent} → {@code TOOL_RESULT}（携带结果状态 success）</li>
+ *   <li>{@code ToolResultEndEvent} → {@code TOOL_RESULT}（携带结果状态 success）；
+ *       若该调用为成功的 {@code execute_sql}，紧随其后追加 {@code SQL_RESULT}（不截断的
+ *       SQL + 结果集，供前端即时渲染）</li>
  *   <li>{@code AgentResultEvent} → 最终回答（不出事件，汇总进 FINAL）</li>
  *   <li>{@code ExceedMaxItersEvent} → 仅告警日志（轨迹协议不含该类型）</li>
  * </ul>
@@ -153,6 +156,7 @@ public final class AgentEventCollector {
             out.add(new ChatStreamEvent(ChatStreamEvent.EVENT_TOOL_RESULT,
                     AgentTraceItem.toolResult(call.name, call.callId,
                             truncate(call.result.toString()), Boolean.TRUE.equals(call.success))));
+            emitSqlResultIfNeeded(call, out);
         } else if (event instanceof AgentResultEvent e) {
             if (e.getResult() != null && e.getResult().getTextContent() != null) {
                 answer = e.getResult().getTextContent();
@@ -169,7 +173,8 @@ public final class AgentEventCollector {
      *
      * @param model     本轮实际使用的模型名
      * @param latencyMs 发起调用到完成的耗时（毫秒）
-     * @return 聊天结果（trace 覆盖全部工具调用；sql/columns/rows 取最后一次成功 execute_sql）
+     * @return 聊天结果（trace 覆盖全部工具调用；sql/columns/rows/sqlExecutionTimeMs
+     *         取最后一次成功 execute_sql）
      */
     public ChatResult toResult(String model, long latencyMs) {
         List<AgentTraceItem> trace = new ArrayList<>(calls.size() * 2);
@@ -185,6 +190,7 @@ public final class AgentEventCollector {
         List<String> columns = null;
         List<Map<String, Object>> rows = null;
         int rowCount = 0;
+        Long sqlExecutionTimeMs = null;
         Call lastExecute = lastSuccessfulExecuteSqlCall();
         if (lastExecute != null) {
             sql = extractSqlArgument(lastExecute);
@@ -193,6 +199,7 @@ public final class AgentEventCollector {
                 columns = parsed.columns();
                 rows = parsed.rows();
                 rowCount = parsed.rowCount();
+                sqlExecutionTimeMs = parsed.executionTimeMs();
             }
         }
 
@@ -202,6 +209,7 @@ public final class AgentEventCollector {
                 .columns(columns)
                 .rows(rows)
                 .rowCount(rowCount)
+                .sqlExecutionTimeMs(sqlExecutionTimeMs)
                 .trace(trace)
                 .model(model)
                 .latencyMs(latencyMs)
@@ -304,7 +312,9 @@ public final class AgentEventCollector {
                     ? objectMapper.convertValue(root.get("rows"), ROWS_TYPE)
                     : List.of();
             int rowCount = root.hasNonNull("rowCount") ? root.get("rowCount").asInt() : rows.size();
-            return new ParsedQuery(columns, rows, rowCount);
+            // 执行耗时只在结果 JSON 里，用于 SQL_RESULT 载荷与 FINAL 的 sqlExecutionTimeMs
+            long executionTimeMs = root.hasNonNull("executionTimeMs") ? root.get("executionTimeMs").asLong() : 0L;
+            return new ParsedQuery(columns, rows, rowCount, executionTimeMs);
         } catch (Exception e) {
             log.warn("[chat] execute_sql 结果非 JSON，columns/rows 置空（原始摘要已在 trace）: {}", truncate(text));
             return null;
@@ -312,7 +322,8 @@ public final class AgentEventCollector {
     }
 
     /** execute_sql 结果解析产物。 */
-    private record ParsedQuery(List<String> columns, List<Map<String, Object>> rows, int rowCount) {
+    private record ParsedQuery(List<String> columns, List<Map<String, Object>> rows, int rowCount,
+                               long executionTimeMs) {
     }
 
     /** 取（或登记）一次工具调用状态；重复 callId 返回已有状态并补全名称。 */
@@ -342,6 +353,32 @@ public final class AgentEventCollector {
         call.callEmitted = true;
         out.add(new ChatStreamEvent(ChatStreamEvent.EVENT_TOOL_CALL,
                 AgentTraceItem.toolCall(call.name, call.callId, truncate(call.input.toString()))));
+    }
+
+    /**
+     * 发 SQL_RESULT 事件（仅成功的 execute_sql 且结果可解析时，紧随 TOOL_RESULT 之后）。
+     *
+     * <p>为什么需要独立事件：{@link #TRUNCATE_LIMIT} 会砍掉 TOOL_RESULT 中的长 SQL 与
+     * 大结果集，前端无法据此渲染"SQL + 结果表"；本事件载荷不截断，供前端在
+     * execute_sql 返回时即刻展示，不必等 FINAL。失败调用不发，让前端继续等 FINAL
+     * （失败结果不是可展示的数据）。
+     */
+    private void emitSqlResultIfNeeded(Call call, List<ChatStreamEvent> out) {
+        if (!EXECUTE_SQL_TOOL.equals(call.name) || !Boolean.TRUE.equals(call.success)) {
+            return;
+        }
+        ParsedQuery parsed = parseQueryResult(call);
+        if (parsed == null) {
+            return;
+        }
+        out.add(new ChatStreamEvent(ChatStreamEvent.EVENT_SQL_RESULT,
+                SqlResultPayload.builder()
+                        .sql(extractSqlArgument(call))
+                        .columns(parsed.columns())
+                        .rows(parsed.rows())
+                        .rowCount(parsed.rowCount())
+                        .executionTimeMs(parsed.executionTimeMs())
+                        .build()));
     }
 
     /** 截断到 {@value #TRUNCATE_LIMIT} 字符；空文本返回 null（响应中省略该字段）。 */

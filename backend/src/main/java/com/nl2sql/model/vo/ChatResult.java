@@ -48,6 +48,14 @@ public class ChatResult {
     /** 结果行数（解析失败为 0） */
     private int rowCount;
 
+    /**
+     * 最后一次成功 execute_sql 的<b>数据库执行</b>耗时（毫秒）。
+     *
+     * <p>取自工具返回结果 JSON 的 {@code executionTimeMs}，与 {@link #latencyMs}
+     * （端到端总耗时）口径不同；本轮没有成功的 execute_sql 时为 null（响应中省略该字段）。
+     */
+    private Long sqlExecutionTimeMs;
+
     /** 工具调用轨迹（按发生顺序） */
     private List<AgentTraceItem> trace;
 

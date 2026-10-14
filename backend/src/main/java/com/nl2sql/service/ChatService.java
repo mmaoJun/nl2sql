@@ -39,7 +39,8 @@ import reactor.core.publisher.SignalType;
  * <ul>
  *   <li>{@link #ask}（同步）— {@code collectList().block(5min)} 收全事件后汇总，供
  *       {@code POST /api/v1/chat} 使用；</li>
- *   <li>{@link #stream}（流式）— 事件边到边映射为 {@link ChatStreamEvent}，结束时追加
+ *   <li>{@link #stream}（流式）— 事件边到边映射为 {@link ChatStreamEvent}（成功的 execute_sql
+ *       后追加不截断的 {@code SQL_RESULT}，供前端边跑边出），结束时追加
  *       {@code FINAL}，出错时发 {@code ERROR} 终止，供 {@code GET /api/v1/chat/stream} 使用。</li>
  * </ul>
  *
@@ -188,7 +189,7 @@ public class ChatService {
      * @param datasourceId    数据源 ID
      * @param question        用户问题（自动包装“数据源ID为 N。”前缀）
      * @param sessionIdOrNull 会话 ID，可空；非空时校验归属并注入历史，为空时自动新建会话
-     * @return 事件流（TEXT_DELTA / TOOL_CALL / TOOL_RESULT / FINAL / ERROR）
+     * @return 事件流（TEXT_DELTA / TOOL_CALL / TOOL_RESULT / SQL_RESULT / FINAL / ERROR）
      * @throws BusinessException 会话不可用（3001 / 401），在流开始前抛出
      */
     public Flux<ChatStreamEvent> stream(Long datasourceId, String question, Long sessionIdOrNull) {

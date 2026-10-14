@@ -32,6 +32,8 @@ import reactor.core.publisher.Flux;
  *   <li>{@code GET /api/v1/chat/stream?question&datasourceId&sessionId} —
  *       {@code text/event-stream}，事件名 {@code TEXT_DELTA}（{@code {delta}}，
  *       本地通道可能缺失）/ {@code TOOL_CALL} / {@code TOOL_RESULT}（{@link com.nl2sql.model.vo.AgentTraceItem}）/
+ *       {@code SQL_RESULT}（{@link com.nl2sql.model.vo.SqlResultPayload}，成功的 execute_sql
+ *       之后立即送达、载荷不截断）/
  *       {@code FINAL}（载荷同 {@link ChatResult}，必定送达）/ {@code ERROR}
  *       （{@code {code, message}}，发后终止）；正常结束即关闭连接。</li>
  * </ul>
@@ -70,7 +72,7 @@ public class ChatController {
     }
 
     /**
-     * 流式问答：SSE 事件流（TEXT_DELTA / TOOL_CALL / TOOL_RESULT / FINAL / ERROR）。
+     * 流式问答：SSE 事件流（TEXT_DELTA / TOOL_CALL / TOOL_RESULT / SQL_RESULT / FINAL / ERROR）。
      *
      * <p>超时由 {@code spring.mvc.async.request-timeout}（5 分钟）兜底；
      * 客户端断开按框架默认处理（响应写失败即停止推送）。

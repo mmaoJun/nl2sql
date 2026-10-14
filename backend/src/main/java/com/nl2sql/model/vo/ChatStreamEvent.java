@@ -9,6 +9,8 @@ package com.nl2sql.model.vo;
  *   <li>{@value #EVENT_TEXT_DELTA} — 载荷 {@link TextDeltaPayload}（可选，本地通道可能缺失）</li>
  *   <li>{@value #EVENT_TOOL_CALL} — 载荷 {@link AgentTraceItem}（type=TOOL_CALL）</li>
  *   <li>{@value #EVENT_TOOL_RESULT} — 载荷 {@link AgentTraceItem}（type=TOOL_RESULT）</li>
+ *   <li>{@value #EVENT_SQL_RESULT} — 载荷 {@link SqlResultPayload}（成功的 execute_sql
+ *       之后立即送达；载荷不截断，供前端即时渲染 SQL 与结果表，失败调用不发）</li>
  *   <li>{@value #EVENT_FINAL} — 载荷 {@link ChatResult}（必定送达，正常结束）</li>
  *   <li>{@value #EVENT_ERROR} — 载荷 {@link ErrorPayload}（异常终止）</li>
  * </ul>
@@ -26,6 +28,12 @@ public record ChatStreamEvent(String event, Object data) {
 
     /** 工具结果返回（AgentTraceItem，type=TOOL_RESULT） */
     public static final String EVENT_TOOL_RESULT = "TOOL_RESULT";
+
+    /**
+     * SQL 执行结果（SqlResultPayload）：仅成功的 execute_sql 之后立即送达，
+     * 紧跟对应的 TOOL_RESULT；载荷不截断。
+     */
+    public static final String EVENT_SQL_RESULT = "SQL_RESULT";
 
     /** 最终结果（ChatResult），事件流的最后一个事件 */
     public static final String EVENT_FINAL = "FINAL";

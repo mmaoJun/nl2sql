@@ -65,8 +65,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       并验证 T10 审计——本轮问答在 {@code audit_logs} 落一条对应用户的记录；
  *       T11 起顺带断言会话归因（审计 session_id/turn_id 非空）与轮次落库（answer 与结果一致）；</li>
  *   <li>SSE {@code GET /api/v1/chat/stream}：收集事件流直到服务端关闭，
- *       断言出现 TOOL_CALL / TOOL_RESULT（且调用先于结果）并以 FINAL 收尾，
- *       FINAL 载荷（ChatResult）answer 非空、rows 非空、sessionId 非空。</li>
+ *       断言出现 TOOL_CALL / TOOL_RESULT / SQL_RESULT（且顺序为调用 → 结果 → SQL 结果）并以 FINAL 收尾，
+ *       FINAL 载荷（ChatResult）answer 非空、rows 非空、sessionId 非空、sqlExecutionTimeMs 非空。</li>
  * </ol>
  *
  * <p>T10 起两个入口均受 JWT 保护：测试内注册随机用户并登录，请求携带
@@ -251,6 +251,23 @@ class ChatControllerIntegrationTest {
                         < names.indexOf(ChatStreamEvent.EVENT_TOOL_RESULT),
                 "TOOL_CALL 应先于 TOOL_RESULT，实际序列: " + names);
 
+        // SQL_RESULT（前端"边跑边出"契约）：成功的 execute_sql 之后追加一条不截断的 SQL + 结果集，
+        // 位置在 TOOL_RESULT 之后、FINAL 之前
+        int toolResultIndex = names.indexOf(ChatStreamEvent.EVENT_TOOL_RESULT);
+        int sqlResultIndex = names.indexOf(ChatStreamEvent.EVENT_SQL_RESULT);
+        int finalIndex = names.lastIndexOf(ChatStreamEvent.EVENT_FINAL);
+        assertTrue(sqlResultIndex >= 0, "应出现 SQL_RESULT 事件，实际序列: " + names);
+        assertTrue(sqlResultIndex > toolResultIndex,
+                "SQL_RESULT 应在 TOOL_RESULT 之后，实际序列: " + names);
+        assertTrue(sqlResultIndex < finalIndex, "SQL_RESULT 应在 FINAL 之前，实际序列: " + names);
+
+        JsonNode sqlResultData = MAPPER.readTree(events.get(sqlResultIndex).data());
+        assertTrue(sqlResultData.path("rows").isArray() && !sqlResultData.path("rows").isEmpty(),
+                "SQL_RESULT.rows 不应为空");
+        assertFalse(sqlResultData.path("sql").asText().isBlank(), "SQL_RESULT.sql 不应为空");
+        assertTrue(sqlResultData.path("executionTimeMs").asLong() >= 0,
+                "SQL_RESULT.executionTimeMs 不应为负");
+
         SseEvent last = events.get(events.size() - 1);
         assertEquals(ChatStreamEvent.EVENT_FINAL, last.name(), "最后一个事件应为 FINAL，实际序列: " + names);
         assertEquals(1, names.stream().filter(ChatStreamEvent.EVENT_FINAL::equals).count(),
@@ -263,6 +280,8 @@ class ChatControllerIntegrationTest {
         assertTrue(finalData.path("latencyMs").asLong() > 0, "FINAL.latencyMs 应大于 0");
         assertTrue(finalData.path("sessionId").asLong() > 0,
                 "FINAL.sessionId 应为自动新建的会话 id（T11 契约增量，T12 依赖）");
+        assertTrue(finalData.hasNonNull("sqlExecutionTimeMs"),
+                "FINAL.sqlExecutionTimeMs 不应为空（本轮有成功的 execute_sql）");
 
         // 留证：前 10 个事件与关键载荷
         System.out.println("[T9-chat] SSE 事件序列(前 10 个): " + names.subList(0, Math.min(10, names.size())));
