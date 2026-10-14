@@ -46,12 +46,10 @@
             <el-icon v-else :size="15" class="ds-item-icon"><Coin /></el-icon>
             <span class="ds-item-text">
               <span class="ds-item-name">{{ ds.name }}</span>
-              <span class="ds-item-type">
-                <span>{{ (ds.type || '').toUpperCase() }}</span>
-                <span class="ds-item-conn" :class="dsStore.connStatus[ds.id] || 'idle'">
-                  · {{ CONN_LABELS[dsStore.connStatus[ds.id]] || CONN_LABELS.idle }}
-                </span>
-              </span>
+              <span class="ds-item-type">{{ (ds.type || '').toUpperCase() }}</span>
+            </span>
+            <span class="ds-item-conn" :class="dsStore.connStatus[ds.id] || 'idle'">
+              {{ CONN_LABELS[dsStore.connStatus[ds.id]] || CONN_LABELS.idle }}
             </span>
             <el-icon v-if="ds.id === modelValue" :size="14" class="ds-item-check"><Check /></el-icon>
           </button>
@@ -300,14 +298,18 @@ function goManage() {
 }
 
 .ds-popover .ds-item-type {
-  display: flex;
-  align-items: center;
-  gap: 3px;
   font-size: 11px;
   color: var(--text-muted);
 }
 
-/* 可用性：正常绿、失败红、未测过/测试中保持灰 */
+/* 可用性贴在行的右侧：名称长度不一时也能对齐成一列，方便一眼扫过去对比
+   正常绿、失败红、未测过/测试中保持灰 */
+.ds-popover .ds-item-conn {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .ds-popover .ds-item-conn.ok {
   color: var(--ok);
 }
