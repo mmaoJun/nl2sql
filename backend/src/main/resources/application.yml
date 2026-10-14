@@ -91,7 +91,7 @@ nl2sql:
     # 本地模型采样温度：0.8（Ollama 默认）下工具调用格式不稳定，实测取 0.1
     local-temperature: 0.1
     # ReActAgent 默认装配的通道: local | cloud
-    provider: local
+    provider: cloud
 
 # SpringDoc OpenAPI
 springdoc:
