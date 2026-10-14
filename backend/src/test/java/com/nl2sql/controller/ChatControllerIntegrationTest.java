@@ -376,8 +376,15 @@ class ChatControllerIntegrationTest {
         assertEquals(turn.getSessionId(), audit.getSessionId(), "审计应带会话归因");
         assertEquals(turn.getId(), audit.getTurnId(), "审计应带轮次归因");
         assertEquals(Boolean.FALSE, audit.getExecutionSuccess(), "取消审计 executionSuccess 应为 false");
-        assertEquals(Boolean.FALSE, audit.getValidationPassed(),
-                "取消审计 validationPassed 应为 false（无成功的 execute_sql）");
+        // validationPassed 的语义是"本轮留下的 SQL 是否通过安全校验"（复核最后一次 execute_sql 入参）。
+        // 取消可能发生在模型写出 SQL 之前或之后，不能固定断言某一个值：按审计里是否留下 SQL 分支断言。
+        if (audit.getGeneratedSql() == null) {
+            assertEquals(Boolean.FALSE, audit.getValidationPassed(),
+                    "本轮没留下任何 SQL，validationPassed 应为 false");
+        } else {
+            assertEquals(Boolean.TRUE, audit.getValidationPassed(),
+                    "留下的 SQL 必然通过了安全校验（未过校验的 SQL 会抛 2002，不会成为工具入参）");
+        }
         assertEquals(turn.getErrorMessage(), audit.getErrorMessage(), "轮次与审计的取消原因应一致");
 
         System.out.println("[T25-cancel] turn#" + turn.getId() + " sessionId=" + turn.getSessionId()

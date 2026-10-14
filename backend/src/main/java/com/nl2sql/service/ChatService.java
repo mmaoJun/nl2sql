@@ -11,6 +11,7 @@ import com.nl2sql.model.vo.ChatResult;
 import com.nl2sql.model.vo.ChatStreamEvent;
 import com.nl2sql.model.vo.ErrorPayload;
 import com.nl2sql.model.vo.SessionVO;
+import com.nl2sql.security.SqlSecurityChecker;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -91,21 +92,25 @@ public class ChatService {
     private final AuthService authService;
     private final ChatSessionService sessionService;
     private final MemoryProperties memoryProperties;
+    private final SqlSecurityChecker sqlSecurityChecker;
 
     /**
-     * @param nl2sqlAgent      默认装配的 ReActAgent（本地 Ollama / 云端 DashScope 由配置决定）
-     * @param auditService     审计日志服务（每次问答收尾写入）
-     * @param authService      认证服务（SecurityContext 用户名 → userId 解析）
-     * @param sessionService   会话服务（归属校验 / 历史读取 / 轮次落库）
-     * @param memoryProperties 会话记忆配置（上下文窗口轮数）
+     * @param nl2sqlAgent        默认装配的 ReActAgent（本地 Ollama / 云端 DashScope 由配置决定）
+     * @param auditService       审计日志服务（每次问答收尾写入）
+     * @param authService        认证服务（SecurityContext 用户名 → userId 解析）
+     * @param sessionService     会话服务（归属校验 / 历史读取 / 轮次落库）
+     * @param memoryProperties   会话记忆配置（上下文窗口轮数）
+     * @param sqlSecurityChecker SQL 安全校验器（审计复核本轮 SQL 的校验结果，见 {@link #isValidationPassed}）
      */
     public ChatService(ReActAgent nl2sqlAgent, AuditService auditService, AuthService authService,
-                       ChatSessionService sessionService, MemoryProperties memoryProperties) {
+                       ChatSessionService sessionService, MemoryProperties memoryProperties,
+                       SqlSecurityChecker sqlSecurityChecker) {
         this.nl2sqlAgent = nl2sqlAgent;
         this.auditService = auditService;
         this.authService = authService;
         this.sessionService = sessionService;
         this.memoryProperties = memoryProperties;
+        this.sqlSecurityChecker = sqlSecurityChecker;
     }
 
     /**
@@ -436,9 +441,10 @@ public class ChatService {
      *   <li>{@code userId} — SecurityContext 用户名经 {@link AuthService#resolveUserId} 解析；</li>
      *   <li>{@code generatedSql} — 本轮最后一次 execute_sql 入参中的 SQL（<b>不限成功</b>，
      *       被校验或执行拒绝的 SQL 同样留痕）；</li>
-     *   <li>{@code validationPassed} — 本轮是否存在成功的 execute_sql 调用
-     *       （工具内部先安全校验后执行，调用成功即校验已通过）；</li>
-     *   <li>{@code executionSuccess} — 本轮问答是否正常完成（异常终止为 false）；</li>
+     *   <li>{@code validationPassed} — 本轮写出的 SQL 是否通过安全校验（复核最后一次
+     *       execute_sql 的入参；一次都没写记 false，见 {@link #isValidationPassed}）；</li>
+     *   <li>{@code executionSuccess} — 本轮是否真的执行成功过 SQL（没有成功的 execute_sql
+     *       时为 false，异常终止同样为 false）；</li>
      *   <li>{@code rowCount} — 成功路径下最后一次成功 execute_sql 的结果行数，失败为 null；</li>
      *   <li>{@code errorMessage} — 失败原因；成功但没跑成 SQL 时写 {@value #NO_SQL_NOTE}；</li>
      *   <li>{@code modelName} / {@code modelProvider} — 本轮真实模型与通道（ollama / dashscope）；</li>
@@ -460,9 +466,29 @@ public class ChatService {
         if (message == null && !sqlExecuted) {
             message = NO_SQL_NOTE;
         }
-        AuditContext context = new AuditContext(userId, sqlExecuted, result != null, rowCount,
+        // 两个布尔量各归其位：executionSuccess = 本轮是否真的执行成功过 SQL，
+        // validationPassed = 本轮 SQL 是否通过安全校验（见 isValidationPassed）。
+        // 此前把 sqlExecuted 装进了 validationPassed、把「有没有结果对象」装进了
+        // executionSuccess，两个字段名不副实：SQL 执行失败的一轮会被记成执行成功。
+        AuditContext context = new AuditContext(userId, isValidationPassed(collector), sqlExecuted, rowCount,
                 elapsedMs, message, model, provider, sessionId, turnId);
         auditService.log(userId, datasourceId, question, collector.lastRequestedSql(), context);
+    }
+
+    /**
+     * 本轮的 SQL 是否通过安全校验（审计用）。
+     *
+     * <p>用校验器复核本轮最后一次尝试过的 SQL：校验是纯函数（只读黑名单 + 语句类型 +
+     * 堆叠/注入检测），对同一条 SQL 结果与执行当时一致，因此不需要在工具层另存校验结论。
+     * 本轮一次 SQL 都没写时记 false——此时 {@code error_message} 会写明"本轮未成功执行
+     * 任何 SQL"，两者合起来能区分"没尝试"与"写了但被拒"。
+     *
+     * @param collector 本轮事件采集器（取最后一次 execute_sql 的入参 SQL）
+     * @return 有尝试过 SQL 且校验通过为 true
+     */
+    private boolean isValidationPassed(AgentEventCollector collector) {
+        String attemptedSql = collector.lastRequestedSql();
+        return attemptedSql != null && sqlSecurityChecker.validate(attemptedSql).valid();
     }
 
     /** 本轮是否存在成功的 execute_sql 工具调用（TOOL_RESULT 的 success=true）。 */
