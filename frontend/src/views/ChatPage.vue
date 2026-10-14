@@ -138,6 +138,7 @@ import DataSourcePage from './DataSourcePage.vue'
 import DataSourceDetail from './DataSourceDetail.vue'
 import { BRAND_ICONS } from '../assets/brandIcons'
 import { Coin } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 const chatStore = useChatStore()
 const dsStore = useDataSourceStore()
@@ -180,6 +181,12 @@ const exampleQueries = [
 ]
 
 function fillQuery(q) {
+  // 示例问题点了就直接发问，所以先得有数据源。没选源时给个提示：此时输入框是
+  // disabled 的，点下去毫无反应，用户看不出该先做什么
+  if (!selectedDsId.value) {
+    ElMessage.warning('请先选择数据源')
+    return
+  }
   handleSend(q)
 }
 
