@@ -39,6 +39,9 @@ export const useChatStore = defineStore('chat', () => {
       content: '',
       sql: null,
       result: null,
+      // 数据库那条 SQL 的执行耗时（SQL_RESULT / FINAL 带出）与端到端耗时（FINAL 带出）
+      sqlExecutionTimeMs: null,
+      latencyMs: null,
       model: null,
       trace: [],
       streaming: true,
@@ -54,25 +57,51 @@ export const useChatStore = defineStore('chat', () => {
     return messages.value[messages.value.length - 1]
   }
 
-  /** SSE 事件 → assistant 消息字段（T9/T11 契约：TEXT_DELTA / TOOL_CALL / TOOL_RESULT / FINAL / ERROR） */
+  /**
+   * SSE 事件 → assistant 消息字段
+   * （T9/T11 契约：TEXT_DELTA / TOOL_CALL / TOOL_RESULT / FINAL / ERROR；
+   *   SQL_RESULT 为「边跑边出」新增：execute_sql 成功即带完整结果集，早于 FINAL 到达）
+   */
   function applyEvent(assistant, { event, data }) {
     switch (event) {
       case 'TEXT_DELTA':
-        assistant.content += data?.delta || ''
+        // 模型边想边说的文本：按产品要求不渲染，正文只出 FINAL 的最终回答，
+        // 所以这里直接丢弃（后端 answer 为空时会自己回退到同一批增量，不会丢内容）
         break
       case 'TOOL_CALL':
       case 'TOOL_RESULT':
         // 轨迹按到达顺序原样入列（TOOL_CALL 带 input，TOOL_RESULT 带 summary/success），
-        // 配对展示由 TracePanel 按 callId 完成
+        // 载荷都被后端截断到 300 字符，仅供排查；界面不再展示轨迹
         assistant.trace.push(data)
         break
+      case 'SQL_RESULT':
+        // 结果集提前到达：SQL 与结果表在模型还没写完回答时就先渲染出来
+        assistant.sql = data?.sql || assistant.sql
+        if (data?.columns) {
+          assistant.result = {
+            columns: data.columns,
+            rows: data.rows || [],
+            rowCount: data.rowCount ?? (data.rows?.length || 0)
+          }
+        }
+        if (typeof data?.executionTimeMs === 'number') {
+          assistant.sqlExecutionTimeMs = data.executionTimeMs
+        }
+        break
       case 'FINAL':
-        // FINAL 必定送达：以它为准收敛（answer 为空时保留已渲染的增量文本）
-        assistant.content = data?.answer || assistant.content
-        assistant.sql = data?.sql || null
+        // FINAL 必定送达：以它为准收敛。answer 为空时退回结果行数说明，避免一片空白
+        assistant.content = data?.answer || resultSummary(assistant.result)
+        assistant.sql = data?.sql || assistant.sql
+        // 已有 SQL_RESULT 时结果集不会比 FINAL 更旧，保留即可；FINAL 带 columns 则以其为准
         assistant.result = data?.columns
           ? { columns: data.columns, rows: data.rows || [], rowCount: data.rowCount ?? (data.rows?.length || 0) }
-          : null
+          : assistant.result
+        if (typeof data?.sqlExecutionTimeMs === 'number') {
+          assistant.sqlExecutionTimeMs = data.sqlExecutionTimeMs
+        }
+        if (typeof data?.latencyMs === 'number') {
+          assistant.latencyMs = data.latencyMs
+        }
         assistant.model = data?.model ? { model: data.model } : null
         break
       case 'ERROR':
@@ -84,6 +113,12 @@ export const useChatStore = defineStore('chat', () => {
       default:
         break
     }
+  }
+
+  /** FINAL 没给回答文本时的兜底：至少说明查到多少行，而不是留一片空白 */
+  function resultSummary(result) {
+    if (!result) return ''
+    return `查询完成，共 ${result.rowCount ?? (result.rows?.length || 0)} 行`
   }
 
   /**
@@ -111,6 +146,9 @@ export const useChatStore = defineStore('chat', () => {
         content: (t.answer && t.answer.trim()) ? t.answer : fallback,
         sql: t.generatedSql || null,
         result: null,
+        // 历史轮次只有端到端耗时（chat_turns.execution_time_ms），没有 SQL 耗时
+        sqlExecutionTimeMs: null,
+        latencyMs: typeof t.executionTimeMs === 'number' ? t.executionTimeMs : null,
         model: t.modelName ? { model: t.modelName } : null,
         trace: [],
         // 取消轮次（T25 后端新增 cancelled 状态）刷新后照样给出"已停止生成"标记

@@ -3,6 +3,22 @@
   <div :class="['msg-row', message.role === 'user' ? 'msg-user' : 'msg-system']">
     <div class="msg-block">
       <div :class="['message-bubble', message.role === 'user' ? 'message-user' : 'message-system']">
+        <!-- 助手回答的固定顺序：SQL 语句 → 执行结果 → 模型回答 → 底部信息条。
+             不展示模型边想边说的思考文本，也不展示执行轨迹（数据仍在 store 里） -->
+        <div v-if="message.sql" class="sql-display">
+          <div class="sql-header">
+            <span class="sql-lang">SQL</span>
+            <button class="copy-chip" :title="sqlCopied ? '已复制' : '复制 SQL'" @click="copyText(message.sql, 'sql')">
+              <el-icon :size="12"><Check v-if="sqlCopied" /><DocumentCopy v-else /></el-icon>
+              <span>{{ sqlCopied ? '已复制' : '复制' }}</span>
+            </button>
+          </div>
+          <pre class="sql-code">{{ message.sql }}</pre>
+        </div>
+
+        <!-- 结果集在 execute_sql 返回时就到达（SQL_RESULT），不必等 FINAL -->
+        <ResultTable v-if="message.result" :result="message.result" />
+
         <div v-if="message.content || message.streaming" class="message-content">
           {{ message.content }}<span v-if="message.streaming" class="stream-cursor"></span>
         </div>
@@ -16,35 +32,17 @@
         <!-- 停止生成后的收尾标记（T25 后端把该轮记为 cancelled，刷新会话后同样显示） -->
         <div v-if="message.stopped" class="stopped-note">已停止生成</div>
 
-        <div v-if="message.sql" class="sql-display">
-          <div class="sql-header">
-            <span class="sql-lang">SQL</span>
-            <button class="copy-chip" :title="sqlCopied ? '已复制' : '复制 SQL'" @click="copyText(message.sql, 'sql')">
-              <el-icon :size="12"><Check v-if="sqlCopied" /><DocumentCopy v-else /></el-icon>
-              <span>{{ sqlCopied ? '已复制' : '复制' }}</span>
-            </button>
-          </div>
-          <pre class="sql-code">{{ message.sql }}</pre>
-        </div>
-
-        <!-- 历史轮次没有 result（库里不存结果行），但模型信息要照样显示：
-             做双模型对比时，回看旧对话得知道当时那一轮用的是哪个模型 -->
-        <div v-if="message.result || message.model" class="result-meta">
-          <template v-if="message.result">
-            <span class="meta-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
-              {{ message.result.columns?.length || 0 }} 列
+        <!-- 历史轮次没有 result（库里不存结果行），但模型与耗时信息要照样显示：
+             做双模型对比时，回看旧对话得知道当时那一轮用的是哪个模型、花了多久 -->
+        <div v-if="metaItems.length" class="result-meta">
+          <template v-for="(item, idx) in metaItems" :key="item.key">
+            <span v-if="idx > 0" class="meta-divider"></span>
+            <span class="meta-item" :class="item.kind">
+              <svg v-if="item.icon === 'columns'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+              <svg v-else-if="item.icon === 'rows'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <svg v-else-if="item.icon === 'clock'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              {{ item.text }}
             </span>
-            <span class="meta-divider"></span>
-            <span class="meta-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              {{ message.result.rows?.length || 0 }} 行
-            </span>
-          </template>
-          <template v-if="message.model">
-            <span v-if="message.result" class="meta-divider"></span>
-            <!-- provider 可缺省（ChatResult 只回模型名）：拼出非空部分，避免出现 "模型: / qwen2.5-coder:7b" -->
-            <span class="meta-item">模型: {{ [message.model.provider, message.model.model].filter(Boolean).join(' / ') }}</span>
           </template>
         </div>
       </div>
@@ -63,8 +61,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { DocumentCopy, Check } from '@element-plus/icons-vue'
+import ResultTable from './ResultTable.vue'
 
 /**
  * 消息气泡：用户提问 + 助手回答。
@@ -72,7 +71,7 @@ import { DocumentCopy, Check } from '@element-plus/icons-vue'
  * 新架构没有追问改写层（T11：不迁 RewriteGate / QuestionRewriter），
  * 原"已理解为 XX"的改写提示已随契约移除；多轮上下文由后端注入历史实现。
  */
-defineProps({
+const props = defineProps({
   message: {
     type: Object,
     required: true
@@ -81,6 +80,36 @@ defineProps({
 
 // 重试：由 ChatPage 调用 chatStore.retryMessage（同一问题 / 同一数据源 / 同一会话重发）
 defineEmits(['retry'])
+
+/** 耗时展示：1 秒以内给毫秒，超过给秒（一轮问答十几秒，纯毫秒读起来费劲） */
+function formatDuration(ms) {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`
+}
+
+/**
+ * 底部信息条：列/行数取自结果集，耗时取自 SQL_RESULT / FINAL。
+ *
+ * 历史轮次（刷新后回看）只有端到端耗时，SQL 耗时与结果集都不落库，故各条都按有无渲染。
+ */
+const metaItems = computed(() => {
+  const m = props.message || {}
+  const items = []
+  if (m.result) {
+    items.push({ key: 'columns', kind: 'meta-result', icon: 'columns', text: `${m.result.columns?.length || 0} 列` })
+    items.push({ key: 'rows', kind: 'meta-result', icon: 'rows', text: `${m.result.rows?.length || 0} 行` })
+  }
+  if (typeof m.sqlExecutionTimeMs === 'number') {
+    items.push({ key: 'sql-cost', kind: 'meta-time', icon: 'clock', text: `SQL 耗时 ${formatDuration(m.sqlExecutionTimeMs)}` })
+  }
+  if (typeof m.latencyMs === 'number') {
+    items.push({ key: 'total-cost', kind: 'meta-time', icon: 'clock', text: `总耗时 ${formatDuration(m.latencyMs)}` })
+  }
+  if (m.model) {
+    // provider 可缺省（ChatResult 只回模型名）：拼出非空部分，避免出现 "模型: / qwen2.5-coder:7b"
+    items.push({ key: 'model', kind: 'meta-model', text: `模型: ${[m.model.provider, m.model.model].filter(Boolean).join(' / ')}` })
+  }
+  return items
+})
 
 // 复制反馈：气泡与 SQL 各自独立计数，避免两处同时闪"已复制"
 const bubbleCopied = ref(false)
@@ -333,8 +362,14 @@ async function copyText(text, target) {
   color: var(--text-muted);
 }
 
+/* 结果集相关的两个图标走 success 绿（与"有结果"的语义一致），
+   耗时与模型是中性信息，用 muted，避免整行都在抢眼 */
 .meta-item svg {
   color: var(--success);
+}
+
+.meta-item.meta-time svg {
+  color: var(--text-muted);
 }
 
 .meta-divider {

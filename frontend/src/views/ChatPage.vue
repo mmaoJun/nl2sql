@@ -70,17 +70,20 @@
         </div>
 
         <template v-else>
-          <template v-for="(msg, idx) in chatStore.messages" :key="idx">
-            <ChatMessage :message="msg" @retry="handleRetry(msg)" />
-            <TracePanel v-if="msg.trace && msg.trace.length" :trace="msg.trace" />
-            <ResultTable v-if="msg.result" :result="msg.result" />
-          </template>
+          <!-- 整条回答（SQL → 结果 → 回答 → 信息条）都由 ChatMessage 负责，
+               执行轨迹不再展示：数据仍在 store 的 trace 里，接口契约也没动 -->
+          <ChatMessage
+            v-for="(msg, idx) in chatStore.messages"
+            :key="idx"
+            :message="msg"
+            @retry="handleRetry(msg)"
+          />
 
           <div v-if="chatStore.loading" class="loading-indicator">
             <div class="loading-dots">
               <span></span><span></span><span></span>
             </div>
-            <span class="loading-text">正在分析并生成 SQL...</span>
+            <span class="loading-text">{{ loadingText }}</span>
           </div>
         </template>
         </div>
@@ -130,8 +133,6 @@ import { useDataSourceStore } from '../stores/datasourceStore'
 import { useSessionStore } from '../stores/sessionStore'
 import ChatInput from '../components/ChatInput.vue'
 import ChatMessage from '../components/ChatMessage.vue'
-import ResultTable from '../components/ResultTable.vue'
-import TracePanel from '../components/TracePanel.vue'
 import SessionList from '../components/SessionList.vue'
 import DataSourceSelector from '../components/DataSourceSelector.vue'
 import DataSourcePage from './DataSourcePage.vue'
@@ -156,6 +157,11 @@ const messagesRef = ref(null)
 const selectedDsId = ref(null)
 /** 当前选中的数据源对象（锁定展示用；切换入口只存在于欢迎页） */
 const selectedDs = computed(() => dsStore.dataSources.find((d) => d.id === selectedDsId.value) || null)
+/** 加载文案：SQL 结果已经到了就说明在写回答，还停在"生成 SQL"看着像卡住 */
+const loadingText = computed(() => {
+  const last = chatStore.messages[chatStore.messages.length - 1]
+  return last && last.sql ? '正在整理回答…' : '正在分析并生成 SQL...'
+})
 const loadError = ref(false)
 
 /** 类型对应的品牌标识；未知类型返回 null，由模板退回通用图标 */

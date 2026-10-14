@@ -46,7 +46,9 @@ const headerStyle = {
 
 <style scoped>
 .result-table-wrapper {
-  margin: -8px 0 20px;
+  /* 现在是消息气泡内部的普通块（原先挂在气泡外，靠负上边距往上贴，
+     挪进气泡后按正常块间距即可） */
+  margin: 10px 0 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
