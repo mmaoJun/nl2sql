@@ -197,12 +197,19 @@ public class NL2SQLTools {
      *
      * <p>防御性实现，顺序固定且不依赖模型先调 validate_sql：
      * 内部 {@code validate} → {@code enforceLimit(max-limit)} → 适配器执行。
-     * 校验失败抛 {@link BusinessException}，让拒绝原因作为工具错误回传给 Agent 学习修正。
+     * 校验失败或执行失败都抛 {@link BusinessException}，让拒绝/失败原因作为工具错误
+     * 回传给 Agent 学习修正。
+     *
+     * <p><b>执行失败必须显式失败</b>：适配器对 SQLException 采取容错（返回
+     * {@code success=false} 而不抛，数据源预览接口依赖该行为），但工具层不能沿用——
+     * 一旦把失败当成功返回，AgentScope 会记成工具调用成功，于是 trace / 审计
+     * （{@code execution_success}）/ FINAL 的 sql&rows 全部把失败当成功。
      *
      * @param datasourceId 数据源 ID
      * @param sql          待执行的 SELECT SQL
      * @return 查询结果（列名 + 数据行），行数不超过 max-limit
-     * @throws BusinessException SQL 未通过安全校验时抛出
+     * @throws BusinessException SQL 未通过安全校验（{@link ErrorCode#SQL_VALIDATION_FAILED}）
+     *                           或数据库执行失败（{@link ErrorCode#SQL_EXECUTION_FAILED}）时抛出
      */
     @Tool(name = "execute_sql",
             description = "执行一条只读 SELECT 查询并返回结果集（列名 + 数据行）。工具内部会强制安全校验并自动追加 LIMIT"
@@ -225,7 +232,17 @@ public class NL2SQLTools {
 
         String safeSql = sqlSecurityChecker.enforceLimit(sql, maxLimit);
         QueryResult result = resolveAdapter(datasourceId).executeQuery(safeSql, maxLimit);
-        log.info("[execute_sql] datasource_id={} rows={} cost={}ms",
+        if (!result.isSuccess()) {
+            // 适配器把 SQLException 收敛成 success=false（数据源预览接口依赖该容错），
+            // 这里必须把它升级为异常：否则 AgentScope 记成工具调用成功，下游全部失真。
+            // 日志打出数据库原始错误与 SQL 摘要，只看日志即可判断本次执行没成，无需翻堆栈。
+            log.warn("[execute_sql] 执行失败: datasource_id={} error={} sql={}",
+                    datasourceId, result.getErrorMessage(), safeSql);
+            throw new BusinessException(ErrorCode.SQL_EXECUTION_FAILED,
+                    "SQL 执行失败：" + result.getErrorMessage()
+                            + "。请先用 get_schema 确认表名与列名，再重试 execute_sql。");
+        }
+        log.info("[execute_sql] 执行成功: datasource_id={} rows={} cost={}ms",
                 datasourceId, result.getRowCount(), result.getExecutionTimeMs());
         return result;
     }

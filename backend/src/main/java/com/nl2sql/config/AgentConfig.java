@@ -55,8 +55,23 @@ public class AgentConfig {
     /** Agent 名称（会话与轨迹标识）。 */
     public static final String AGENT_NAME = "NL2SQLAgent";
 
-    /** ReAct 最大迭代轮数。 */
-    public static final int MAX_ITERS = 5;
+    /**
+     * ReAct 最大迭代轮数。
+     *
+     * <p>取 10 而不是 5：探索阶段一次只查一张表的 schema，四表问题光探索就要 5 次调用
+     * （list_tables + 4 次 get_schema），留 5 会让 execute_sql 一次机会都没有。两次实测
+     * 日志正好撞满上限：
+     * <ul>
+     *   <li>「谁买过手机」：list_tables + users/orders/order_items/products 四次 get_schema
+     *       = 5 次，直接 {@code 超过最大迭代轮数: maxIters=5}，execute_sql 一次都没调，
+     *       模型只能回一句"未找到直接关联字段"；</li>
+     *   <li>「谁买过苹果手机」：同上 4 次探索 + 1 次 execute_sql（因列名写错
+     *       {@code Unknown column 'oi.user_id' in 'on clause'} 失败）= 5 次，失败后无重试余地。</li>
+     * </ul>
+     * 按 10 计算：4~5 次探索 + 首次 execute_sql + 按报错自纠（重新 get_schema 再执行）
+     * 一两轮，仍有富余。代价是极端情况下多跑几次模型（本地 7B 每轮 1~2s）。
+     */
+    public static final int MAX_ITERS = 10;
 
     /** Ollama 不校验 API Key，填非空占位串即可通过 OpenAI 兼容客户端的参数检查。 */
     static final String OLLAMA_PLACEHOLDER_API_KEY = "ollama";
